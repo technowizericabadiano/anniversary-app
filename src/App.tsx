@@ -1749,30 +1749,31 @@ export default function App() {
                     <circle cx="0" cy="0" r="11" fill="#fff" filter="url(#glow)" opacity="0.9" />
                     <circle cx="0" cy="0" r="7" fill="#ff69b4" opacity="0.6" />
                   </g>
-                  <filter id="wrapLift" x="-50%" y="-50%" width="200%" height="200%">
-                    <feDropShadow dx="0" dy="5" stdDeviation="4" floodColor="rgba(0,0,0,0.18)" />
-                  </filter>
-                  <linearGradient id="ribbonGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#8e4560" />
-                    <stop offset="38%" stopColor="#de8daf" />
-                    <stop offset="58%" stopColor="#f5b4ca" />
-                    <stop offset="100%" stopColor="#a8506f" />
-                  </linearGradient>
-                  <radialGradient id="bouquetGlow" cx="50%" cy="40%" r="60%">
-                    <stop offset="0%" stopColor="#ffe7f2" stopOpacity="0.72" />
-                    <stop offset="55%" stopColor="#f9d4e4" stopOpacity="0.24" />
-                    <stop offset="100%" stopColor="#f0c8de" stopOpacity="0" />
-                  </radialGradient>
-                  <filter id="petalDepthShadow" x="-35%" y="-35%" width="170%" height="170%">
-                    <feDropShadow dx="0" dy="3" stdDeviation="2.1" floodColor="rgba(0,0,0,0.16)" />
-                  </filter>
-                  <filter id="backFlowerBlur" x="-30%" y="-30%" width="160%" height="160%">
-                    <feGaussianBlur stdDeviation="1.4" />
-                  </filter>
-                  <filter id="bloomGlowBlur" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="14" />
-                  </filter>
-                </defs>
+                  <defs>
+                    <filter id="wrapLift" x="-50%" y="-50%" width="200%" height="200%">
+                      <feDropShadow dx="0" dy="5" stdDeviation="4" floodColor="rgba(0,0,0,0.18)" />
+                    </filter>
+                    <linearGradient id="ribbonGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#8e4560" />
+                      <stop offset="38%" stopColor="#de8daf" />
+                      <stop offset="58%" stopColor="#f5b4ca" />
+                      <stop offset="100%" stopColor="#a8506f" />
+                    </linearGradient>
+                    <radialGradient id="bouquetGlow" cx="50%" cy="40%" r="60%">
+                      <stop offset="0%" stopColor="#ffe7f2" stopOpacity="0.72" />
+                      <stop offset="55%" stopColor="#f9d4e4" stopOpacity="0.24" />
+                      <stop offset="100%" stopColor="#f0c8de" stopOpacity="0" />
+                    </radialGradient>
+                    <filter id="petalDepthShadow" x="-35%" y="-35%" width="170%" height="170%">
+                      <feDropShadow dx="0" dy="3" stdDeviation="2.1" floodColor="rgba(0,0,0,0.16)" />
+                    </filter>
+                    <filter id="backFlowerBlur" x="-30%" y="-30%" width="160%" height="160%">
+                      <feGaussianBlur stdDeviation="1.4" />
+                    </filter>
+                    <filter id="bloomGlowBlur" x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur stdDeviation="14" />
+                    </filter>
+                  </defs>
 
 
                 {accentSprigs.map((sprig, sprigIndex) => (
