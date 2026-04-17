@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Extract Memories</title>
+</head>
+<body>
+    <h1>Extract Your Memories</h1>
+    <p>Click the button below to extract your memories data:</p>
+    <button id="extractBtn">Extract Memories</button>
+    <pre id="output"></pre>
+
+    <script>
+        document.getElementById('extractBtn').addEventListener('click', async () => {
+            try {
+                const request = indexedDB.open('anniversary-memory-db');
+                request.onsuccess = () => {
+                    const db = request.result;
+                    const tx = db.transaction('memories', 'readonly');
+                    const store = tx.objectStore('memories');
+                    const getAll = store.getAll();
+
+                    getAll.onsuccess = () => {
+                        const data = getAll.result;
+                        const output = document.getElementById('output');
+                        output.textContent = JSON.stringify(data, null, 2);
+                        console.log('Memories data:', data);
+                        alert('Data extracted! Copy the text below and send it to the developer.');
+                    };
+
+                    getAll.onerror = () => {
+                        alert('Error extracting memories');
+                    };
+                };
+
+                request.onerror = () => {
+                    alert('Could not open database');
+                };
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+    </script>
+</body>
+</html>

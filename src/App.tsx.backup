@@ -1,0 +1,2381 @@
+import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Button } from "@/components/ui/Button";
+import { 
+  loadStoredMemories, 
+  saveStoredMemory, 
+  exportMemoriesToFile,
+  importMemoriesFromFile,
+  deleteAllMemories,
+  autoLoadBackupIfAvailable,
+  type StoredMemoryRecord 
+} from "@/lib/memoryStorage";
+import { loadFolderMemories } from "@/lib/folderMemories";
+
+type Stage = "flowers" | "letter" | "album";
+type AlbumView = "photos" | "videos";
+
+type BouquetFlower = {
+  id: string;
+  x: number;
+  y: number;
+  scale: number;
+  stemPath: string;
+  stemThickness?: number;
+  outerGradient: string;
+  innerGradient: string;
+  bloomGlow: string;
+  centerColor: string;
+  dotColor: string;
+  outerPetalCount: number;
+  innerPetalCount: number;
+  outerPetalRx: number;
+  outerPetalRy: number;
+  innerPetalRx: number;
+  innerPetalRy: number;
+  outerAngleOffset?: number;
+  innerAngleOffset?: number;
+  isBackFlower?: boolean;
+  sway: [number, number, number];
+  swayDuration: number;
+  leaves: {
+    cx: number;
+    cy: number;
+    rx: number;
+    ry: number;
+    rotation: number;
+    gradient: string;
+  }[];
+};
+
+type AccentSprig = {
+  id: string;
+  path: string;
+  blossoms: {
+    x: number;
+    y: number;
+    scale: number;
+  }[];
+};
+
+type DriftingPetal = {
+  id: string;
+  left: string;
+  top: string;
+  duration: number;
+  delay: number;
+  rotate: number;
+};
+
+type FallingPetal = {
+  id: string;
+  left: string;
+  width: number;
+  height: number;
+  duration: number;
+  delay: number;
+  drift: number;
+  rotate: number;
+  opacity: number;
+  blur?: number;
+};
+
+export type AlbumItem = {
+  id: string;
+  url: string;
+  name: string;
+  label: string;
+  kind: "image" | "video";
+  mimeType: string;
+};
+
+const heartSymbol = "\u2764\uFE0F";
+const cameraSymbol = "\u{1F4F8}";
+const videoSymbol = "\u{1F4F9}";
+
+const letterTitle = "Happy 3rd Anniversary, Babe";
+
+const letterText = [
+  letterTitle,
+  "",
+  "Babe, it has been three beautiful years since we started this journey together, and I still cannot believe how lucky I am to have you in my life. These past three years have been filled with love, laughter, growth, and unforgettable memories that I will always treasure in my heart.",
+  "",
+  "From the very beginning, you changed my world in the most beautiful way. You brought light into my life when I did not even realize I needed it. Every time you smile, every time you laugh, and every time you say my name, my heart feels so full. Loving you has been the most natural and happiest part of my life.",
+  "",
+  "Babe, thank you for staying with me through everything. Through the good days and the hard ones, through misunderstandings and challenges, we always chose each other. That is what makes our love so special. We did not just fall in love, we grew in love. We learned, we adjusted, and we became stronger together.",
+  "",
+  "You are not just my girlfriend. You are my best friend, my comfort, my peace, and my greatest blessing. When I am with you, I feel safe. When I am with you, I feel understood. When I am with you, I feel at home.",
+  "",
+  "Three years may sound like just a number, but for me it represents countless memories, the sweet messages, the random jokes, and the simple moments that became unforgettable because I shared them with you. Every second with you is something I truly treasure.",
+  "",
+  "Babe, my love for you keeps growing every single day. It is deeper, stronger, and more certain than ever. I promise to keep choosing you, to keep loving you, to keep supporting you, and to keep building a future with you. This is only the beginning of our forever.",
+  "",
+  "Happy 3rd Anniversary, Babe. Thank you for loving me, for believing in us, and for being the most amazing person in my life. I love you more than words can ever express, today, tomorrow, and always.",
+].join("\n");
+
+const letterBodyText = letterText.startsWith(`${letterTitle}\n\n`)
+  ? letterText.slice(letterTitle.length + 2)
+  : letterText;
+
+const splitLetterParagraphs = (text: string) =>
+  text
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+type PhotoScrapbookLayout = {
+  frameClassName: string;
+  mobileHeightClassName: string;
+  rotation: number;
+  tapeLeftRotation: number;
+  tapeRightRotation: number;
+};
+
+const photoScrapbookLayouts: PhotoScrapbookLayout[] = [
+  {
+    frameClassName: "sm:col-span-2 sm:row-span-2 xl:col-span-2 xl:row-span-3",
+    mobileHeightClassName: "min-h-[20rem] sm:min-h-0",
+    rotation: -2.8,
+    tapeLeftRotation: -7,
+    tapeRightRotation: 6,
+  },
+  {
+    frameClassName: "sm:col-span-2 sm:row-span-1 xl:col-span-2 xl:row-span-2",
+    mobileHeightClassName: "min-h-[16rem] sm:min-h-0",
+    rotation: 1.9,
+    tapeLeftRotation: -4,
+    tapeRightRotation: 8,
+  },
+  {
+    frameClassName: "sm:col-span-1 sm:row-span-1 xl:col-span-1 xl:row-span-2",
+    mobileHeightClassName: "min-h-[16rem] sm:min-h-0",
+    rotation: -1.6,
+    tapeLeftRotation: -6,
+    tapeRightRotation: 5,
+  },
+  {
+    frameClassName: "sm:col-span-1 sm:row-span-1 xl:col-span-1 xl:row-span-2",
+    mobileHeightClassName: "min-h-[16rem] sm:min-h-0",
+    rotation: 2.4,
+    tapeLeftRotation: -5,
+    tapeRightRotation: 7,
+  },
+  {
+    frameClassName: "sm:col-span-2 sm:row-span-2 xl:col-span-2 xl:row-span-2",
+    mobileHeightClassName: "min-h-[20rem] sm:min-h-0",
+    rotation: -1.3,
+    tapeLeftRotation: -8,
+    tapeRightRotation: 4,
+  },
+  {
+    frameClassName: "sm:col-span-2 sm:row-span-1 xl:col-span-1 xl:row-span-2",
+    mobileHeightClassName: "min-h-[16rem] sm:min-h-0",
+    rotation: 2.7,
+    tapeLeftRotation: -3,
+    tapeRightRotation: 9,
+  },
+  {
+    frameClassName: "sm:col-span-2 sm:row-span-1 xl:col-span-1 xl:row-span-2",
+    mobileHeightClassName: "min-h-[16rem] sm:min-h-0",
+    rotation: -2.2,
+    tapeLeftRotation: -8,
+    tapeRightRotation: 5,
+  },
+  {
+    frameClassName: "sm:col-span-4 sm:row-span-1 xl:col-span-2 xl:row-span-2",
+    mobileHeightClassName: "min-h-[16rem] sm:min-h-0",
+    rotation: 1.2,
+    tapeLeftRotation: -6,
+    tapeRightRotation: 6,
+  },
+  {
+    frameClassName: "sm:col-span-2 sm:row-span-2 xl:col-span-2 xl:row-span-3",
+    mobileHeightClassName: "min-h-[20rem] sm:min-h-0",
+    rotation: -2.4,
+    tapeLeftRotation: -7,
+    tapeRightRotation: 7,
+  },
+  {
+    frameClassName: "sm:col-span-2 sm:row-span-1 xl:col-span-2 xl:row-span-2",
+    mobileHeightClassName: "min-h-[16rem] sm:min-h-0",
+    rotation: 2.1,
+    tapeLeftRotation: -4,
+    tapeRightRotation: 8,
+  },
+];
+
+const photoPlaceholderLayouts: PhotoScrapbookLayout[] = [
+  {
+    frameClassName: "sm:col-span-2 sm:row-span-2 xl:col-span-2 xl:row-span-2",
+    mobileHeightClassName: "min-h-[14.5rem] sm:min-h-0",
+    rotation: -1.8,
+    tapeLeftRotation: -6,
+    tapeRightRotation: 5,
+  },
+  {
+    frameClassName: "sm:col-span-1 sm:row-span-2 xl:col-span-1 xl:row-span-2",
+    mobileHeightClassName: "min-h-[12rem] sm:min-h-0",
+    rotation: 1.4,
+    tapeLeftRotation: -5,
+    tapeRightRotation: 6,
+  },
+  {
+    frameClassName: "sm:col-span-1 sm:row-span-3 xl:col-span-1 xl:row-span-3",
+    mobileHeightClassName: "min-h-[15.5rem] sm:min-h-0",
+    rotation: -1.3,
+    tapeLeftRotation: -7,
+    tapeRightRotation: 4,
+  },
+  {
+    frameClassName: "sm:col-span-2 sm:row-span-2 xl:col-span-1 xl:row-span-2",
+    mobileHeightClassName: "min-h-[13.75rem] sm:min-h-0",
+    rotation: 1.7,
+    tapeLeftRotation: -5,
+    tapeRightRotation: 7,
+  },
+  {
+    frameClassName: "sm:col-span-1 sm:row-span-2 xl:col-span-1 xl:row-span-2",
+    mobileHeightClassName: "min-h-[12rem] sm:min-h-0",
+    rotation: -1.5,
+    tapeLeftRotation: -6,
+    tapeRightRotation: 5,
+  },
+  {
+    frameClassName: "sm:col-span-2 sm:row-span-2 xl:col-span-2 xl:row-span-2",
+    mobileHeightClassName: "min-h-[14rem] sm:min-h-0",
+    rotation: 1.2,
+    tapeLeftRotation: -4,
+    tapeRightRotation: 6,
+  },
+];
+
+const bouquetFlowers: BouquetFlower[] = [
+  {
+    id: "left",
+    x: 132,
+    y: 224,
+    scale: 1.06,
+    stemPath: "M210 560 C186 510 154 368 132 256",
+    stemThickness: 9,
+    outerGradient: "petalRose",
+    innerGradient: "petalRoseInner",
+    bloomGlow: "rgba(255, 124, 182, 0.26)",
+    centerColor: "#f5bf4b",
+    dotColor: "#8f4d0d",
+    outerPetalCount: 11,
+    innerPetalCount: 8,
+    outerPetalRx: 15,
+    outerPetalRy: 44,
+    innerPetalRx: 12,
+    innerPetalRy: 30,
+    outerAngleOffset: -12,
+    innerAngleOffset: 6,
+    sway: [-1.5, 1.8, -1.5],
+    swayDuration: 6.8,
+    leaves: [
+      { cx: 180, cy: 434, rx: 18, ry: 46, rotation: -38, gradient: "leafDark" },
+      { cx: 156, cy: 354, rx: 16, ry: 38, rotation: 32, gradient: "leafSoft" },
+    ],
+  },
+  {
+    id: "center",
+    x: 210,
+    y: 170,
+    scale: 1.28,
+    stemPath: "M210 560 C214 494 216 334 210 204",
+    stemThickness: 9,
+    outerGradient: "petalPeony",
+    innerGradient: "petalPeonyInner",
+    bloomGlow: "rgba(255, 197, 224, 0.28)",
+    centerColor: "#f8d045",
+    dotColor: "#8d4b07",
+    outerPetalCount: 12,
+    innerPetalCount: 9,
+    outerPetalRx: 16.5,
+    outerPetalRy: 48,
+    innerPetalRx: 13.2,
+    innerPetalRy: 34,
+    outerAngleOffset: 4,
+    innerAngleOffset: 10,
+    sway: [-1, 1.3, -1],
+    swayDuration: 7.4,
+    leaves: [
+      { cx: 252, cy: 418, rx: 18, ry: 44, rotation: 30, gradient: "leafSoft" },
+      { cx: 174, cy: 324, rx: 16, ry: 38, rotation: -28, gradient: "leafDark" },
+    ],
+  },
+  {
+    id: "right",
+    x: 298,
+    y: 228,
+    scale: 1.08,
+    stemPath: "M210 560 C240 500 276 368 298 260",
+    stemThickness: 8,
+    outerGradient: "petalCoral",
+    innerGradient: "petalCoralInner",
+    bloomGlow: "rgba(255, 150, 170, 0.22)",
+    centerColor: "#f7bd50",
+    dotColor: "#854406",
+    outerPetalCount: 10,
+    innerPetalCount: 8,
+    outerPetalRx: 15.2,
+    outerPetalRy: 44,
+    innerPetalRx: 12.2,
+    innerPetalRy: 31.5,
+    outerAngleOffset: 14,
+    innerAngleOffset: -8,
+    sway: [1.4, -1.6, 1.4],
+    swayDuration: 6.4,
+    leaves: [
+      { cx: 246, cy: 436, rx: 18, ry: 44, rotation: 36, gradient: "leafDark" },
+      { cx: 274, cy: 350, rx: 16, ry: 38, rotation: -24, gradient: "leafSoft" },
+    ],
+  },
+  {
+    id: "top",
+    x: 206,
+    y: 136,
+    scale: 0.78,
+    stemPath: "M210 560 C210 484 210 330 206 180",
+    stemThickness: 7,
+    outerGradient: "petalLavender",
+    innerGradient: "petalLavenderInner",
+    bloomGlow: "rgba(180, 120, 255, 0.22)",
+    centerColor: "#f8dea8",
+    dotColor: "#6b46c1",
+    outerPetalCount: 9,
+    innerPetalCount: 7,
+    outerPetalRx: 14,
+    outerPetalRy: 39,
+    innerPetalRx: 11,
+    innerPetalRy: 27,
+    outerAngleOffset: 22,
+    innerAngleOffset: -12,
+    isBackFlower: true,
+    sway: [0.8, -1.2, 0.8],
+    swayDuration: 8.2,
+    leaves: [
+      { cx: 238, cy: 300, rx: 14, ry: 34, rotation: 44, gradient: "leafSoft" },
+      { cx: 178, cy: 282, rx: 14, ry: 34, rotation: -46, gradient: "leafDark" },
+    ],
+  },
+];
+
+const accentSprigs: AccentSprig[] = [
+  {
+    id: "sprig-left",
+    path: "M142 552 C124 484 108 370 92 212",
+    blossoms: [
+      { x: 104, y: 246, scale: 0.62 },
+      { x: 88, y: 212, scale: 0.54 },
+      { x: 118, y: 282, scale: 0.48 },
+    ],
+  },
+  {
+    id: "sprig-mid-left",
+    path: "M180 556 C168 480 150 370 144 238",
+    blossoms: [
+      { x: 154, y: 264, scale: 0.54 },
+      { x: 138, y: 232, scale: 0.44 },
+    ],
+  },
+  {
+    id: "sprig-mid-right",
+    path: "M240 556 C252 482 272 370 284 236",
+    blossoms: [
+      { x: 266, y: 270, scale: 0.54 },
+      { x: 286, y: 234, scale: 0.46 },
+    ],
+  },
+  {
+    id: "sprig-right",
+    path: "M278 552 C294 486 318 376 332 222",
+    blossoms: [
+      { x: 316, y: 248, scale: 0.62 },
+      { x: 334, y: 214, scale: 0.52 },
+      { x: 300, y: 286, scale: 0.46 },
+    ],
+  },
+];
+
+const roseSparkles = Array.from({ length: 26 }, (_, index) => ({
+  left: `${6 + ((index * 13) % 88)}%`,
+  top: `${8 + ((index * 17) % 62)}%`,
+  size: index % 5 === 0 ? 5 : index % 3 === 0 ? 4 : 3,
+  duration: 3.8 + (index % 4) * 0.55,
+  delay: (index % 6) * 0.45,
+  opacity: 0.22 + (index % 5) * 0.06,
+}));
+
+const driftingPetals: DriftingPetal[] = [
+  { id: "petal-a", left: "18%", top: "18%", duration: 10.5, delay: 0.6, rotate: 18 },
+  { id: "petal-b", left: "80%", top: "22%", duration: 11.8, delay: 1.2, rotate: -14 },
+  { id: "petal-c", left: "12%", top: "54%", duration: 12.4, delay: 0.2, rotate: -26 },
+  { id: "petal-d", left: "84%", top: "62%", duration: 9.9, delay: 1.8, rotate: 22 },
+];
+
+const floatingHearts = Array.from({ length: 12 }, (_, index) => ({
+  id: `heart-${index}`,
+  left: `${8 + ((index * 8.3) % 84)}%`,
+  top: `${15 + ((index * 11.7) % 70)}%`,
+  size: index % 4 === 0 ? 24 : index % 3 === 0 ? 18 : 14,
+  duration: 6 + (index % 5) * 1.2,
+  delay: index * 0.4,
+  opacity: 0.15 + (index % 4) * 0.08,
+  color: index % 3 === 0 ? "#ff6b9d" : index % 2 === 0 ? "#ffb8d0" : "#ffc4dd",
+}));
+
+const goldenSparkles = Array.from({ length: 18 }, (_, index) => ({
+  left: `${5 + ((index * 11) % 90)}%`,
+  top: `${10 + ((index * 13.5) % 75)}%`,
+  size: index % 4 === 0 ? 6 : index % 3 === 0 ? 4 : 3,
+  duration: 2.5 + (index % 5) * 0.4,
+  delay: (index % 7) * 0.35,
+  opacity: 0.3 + (index % 4) * 0.1,
+}));
+
+// Twinkling stars
+const twinklingStars = Array.from({ length: 20 }, (_, index) => ({
+  id: `star-${index}`,
+  left: `${3 + ((index * 9.4) % 94)}%`,
+  top: `${5 + ((index * 12.3) % 80)}%`,
+  size: index % 3 === 0 ? 4 : 2,
+  duration: 1.5 + (index % 6) * 0.3,
+  delay: index * 0.2,
+  color: index % 4 === 0 ? "#ffffff" : index % 3 === 0 ? "#ffe4f1" : "#fff8e7",
+}));
+
+const fallingPetals: FallingPetal[] = Array.from({ length: 16 }, (_, index) => ({
+  id: `falling-petal-${index}`,
+  left: `${4 + ((index * 6.2) % 92)}%`,
+  width: index % 4 === 0 ? 18 : index % 3 === 0 ? 15 : 12,
+  height: index % 4 === 0 ? 28 : index % 3 === 0 ? 24 : 20,
+  duration: 8.5 + (index % 5) * 0.9,
+  delay: (index % 6) * 0.85,
+  drift: index % 2 === 0 ? 42 : -38,
+  rotate: index % 2 === 0 ? 20 : -18,
+  opacity: 0.18 + (index % 4) * 0.06,
+  blur: index % 3 === 0 ? 1.2 : 0.6,
+}));
+
+const stageStorageKey = "memory-stage";
+const albumViewStorageKey = "memory-album-view";
+const albumSidebarVisibilityStorageKey = "memory-album-sidebar-visible";
+const audioPlaybackTimeStorageKey = "memory-audio-time";
+const audioPlaybackStateStorageKey = "memory-audio-state";
+const photoSlotCount = 42;
+const videoSlotCount = 6;
+
+const createEmptySlots = (count: number): (AlbumItem | null)[] =>
+  Array.from({ length: count }, () => null);
+
+const createSlotKey = (kind: AlbumItem["kind"], slotIndex: number) => `${kind}-${slotIndex}`;
+
+const readStoredStage = (): Stage => {
+  if (typeof window === "undefined") return "flowers";
+
+  const savedStage = window.localStorage.getItem(stageStorageKey);
+  if (savedStage === "flowers" || savedStage === "letter" || savedStage === "album") {
+    return savedStage;
+  }
+
+  return "flowers";
+};
+
+const readStoredAlbumView = (): AlbumView => {
+  if (typeof window === "undefined") return "photos";
+
+  const savedAlbumView = window.localStorage.getItem(albumViewStorageKey);
+  return savedAlbumView === "videos" ? "videos" : "photos";
+};
+
+const readStoredAlbumSidebarVisible = (): boolean => {
+  if (typeof window === "undefined") return true;
+
+  const savedSidebarVisible = window.localStorage.getItem(albumSidebarVisibilityStorageKey);
+  if (savedSidebarVisible === "false") return false;
+  return true;
+};
+
+const formatMemoryLabel = (fileName: string, fallback: string) => {
+  const withoutExtension = fileName.replace(/\.[^.]+$/, "");
+  const normalized = withoutExtension.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+
+  if (!normalized) return fallback;
+
+  const titleCased = normalized.replace(/\b\w/g, (character) => character.toUpperCase());
+  return titleCased.length > 34 ? `${titleCased.slice(0, 31).trim()}...` : titleCased;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const getCropGeometry = (
+  imageWidth: number,
+  imageHeight: number,
+  zoom: number,
+  offsetX: number,
+  offsetY: number,
+) => {
+  const safeWidth = Math.max(imageWidth, 1);
+  const safeHeight = Math.max(imageHeight, 1);
+  const safeZoom = clamp(zoom, 1, 2);
+  const cropSide = Math.min(safeWidth, safeHeight) / safeZoom;
+  const maxShiftX = Math.max(0, (safeWidth - cropSide) / 2);
+  const maxShiftY = Math.max(0, (safeHeight - cropSide) / 2);
+  const normalizedX = clamp(offsetX / 100, -1, 1);
+  const normalizedY = clamp(offsetY / 100, -1, 1);
+  const sourceX = clamp((safeWidth - cropSide) / 2 + normalizedX * maxShiftX, 0, safeWidth - cropSide);
+  const sourceY = clamp((safeHeight - cropSide) / 2 + normalizedY * maxShiftY, 0, safeHeight - cropSide);
+  const previewWidthPercent = (safeWidth / cropSide) * 100;
+  const previewHeightPercent = (safeHeight / cropSide) * 100;
+  const previewShiftXPercent = (-normalizedX * Math.max(previewWidthPercent - 100, 0)) / 2;
+  const previewShiftYPercent = (-normalizedY * Math.max(previewHeightPercent - 100, 0)) / 2;
+
+  return {
+    cropSide,
+    sourceX,
+    sourceY,
+    previewWidthPercent,
+    previewHeightPercent,
+    previewShiftXPercent,
+    previewShiftYPercent,
+  };
+};
+
+function UploadGlyph({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className={className}>
+      <path d="M12 16V4" strokeLinecap="round" />
+      <path d="M7.5 8.5L12 4l4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 15.5v2a2.5 2.5 0 0 0 2.5 2.5h9A2.5 2.5 0 0 0 19 17.5v-2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CropGlyph({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" className={className}>
+      <path d="M8 3.5H5.75a2.25 2.25 0 0 0-2.25 2.25V8" strokeLinecap="round" />
+      <path d="M16 3.5h2.25a2.25 2.25 0 0 1 2.25 2.25V8" strokeLinecap="round" />
+      <path d="M8 20.5H5.75a2.25 2.25 0 0 1-2.25-2.25V16" strokeLinecap="round" />
+      <path d="M16 20.5h2.25a2.25 2.25 0 0 0 2.25-2.25V16" strokeLinecap="round" />
+      <rect x="7.25" y="7.25" width="9.5" height="9.5" rx="2.1" />
+    </svg>
+  );
+}
+
+function NavMarkGlyph({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" className={className}>
+      <path d="M12 3.5v17" strokeLinecap="round" />
+      <path d="M3.5 12h17" strokeLinecap="round" />
+      <path d="M5.9 5.9l12.2 12.2" strokeLinecap="round" />
+      <path d="M18.1 5.9L5.9 18.1" strokeLinecap="round" />
+      <circle cx="12" cy="12" r="2.3" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function ChevronDownGlyph({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
+      <path d="M4 6.5 8 10l4-3.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function GalleryGlyph({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" className={className}>
+      <rect x="3.5" y="5" width="17" height="14.5" rx="3" />
+      <circle cx="8.4" cy="9.1" r="1.15" />
+      <path d="m6.2 16 4.1-4.2 2.6 2.6 2.2-2.2 2.7 3.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function VideoGlyph({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" className={className}>
+      <rect x="3.5" y="5.5" width="13.5" height="13" rx="3" />
+      <path d="m11 9.5 3.7 2.5-3.7 2.5V9.5Z" fill="currentColor" stroke="none" />
+      <path d="M17 10.2 20.5 8v8L17 13.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function LetterGlyph({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" className={className}>
+      <rect x="3.5" y="6" width="17" height="12.5" rx="2.8" />
+      <path d="m5.5 8 6.5 5 6.5-5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m5.8 16.2 4.1-3.4" strokeLinecap="round" />
+      <path d="m18.2 16.2-4.1-3.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function BloomGlyph({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={className}>
+      <ellipse cx="12" cy="6.9" rx="2.5" ry="3.3" />
+      <ellipse cx="12" cy="17.1" rx="2.5" ry="3.3" />
+      <ellipse cx="6.9" cy="12" rx="3.3" ry="2.5" />
+      <ellipse cx="17.1" cy="12" rx="3.3" ry="2.5" />
+      <circle cx="12" cy="12" r="2.1" />
+    </svg>
+  );
+}
+
+const musicTrackPath = "/safe-here.mp3";
+
+const primaryButtonClass =
+  "border-transparent bg-[linear-gradient(135deg,#934867_0%,#c35e8f_52%,#eca9c4_100%)] text-white shadow-[0_22px_54px_rgba(157,81,115,0.28)] hover:brightness-[1.04] hover:shadow-[0_28px_64px_rgba(157,81,115,0.34)]";
+
+const secondaryButtonClass =
+  "border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(252,241,245,0.94))] text-[#5b3647] shadow-[0_18px_48px_rgba(122,87,103,0.15)] hover:bg-white hover:text-[#482737]";
+
+const ghostButtonClass =
+  "border-[#e1c7d2]/85 bg-white/58 text-[#6c495b] shadow-[0_14px_34px_rgba(123,92,107,0.12)] hover:bg-white/86 hover:text-[#4f2d3d]";
+
+const largeActionButtonClass = "min-w-[10.5rem] px-6 py-4 text-[0.76rem] tracking-[0.22em]";
+const cropActionButtonClass = "min-h-[3rem] px-5 py-3 text-[0.64rem] tracking-[0.24em]";
+
+const softNavigationShellClass =
+  "rounded-[2rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(255,244,247,0.92))] p-3 shadow-[0_24px_56px_rgba(126,88,106,0.14)] backdrop-blur-xl";
+
+const albumNavigationPanelClass =
+  "rounded-[1.8rem] border border-[#e9dfe4] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(250,243,246,0.98))] p-3 shadow-[0_20px_42px_rgba(127,90,108,0.08)]";
+
+const albumNavigationTabsClass =
+  "space-y-2";
+
+const albumNavigationLinksClass =
+  "mt-3 space-y-2 border-t border-[#eee4e7] pt-3";
+
+const albumTabButtonClass =
+  "flex min-h-[3.45rem] w-full items-center justify-between gap-3 rounded-[1.15rem] border border-transparent px-4 py-3 text-left text-[0.97rem] font-semibold normal-case tracking-[0.01em] transition duration-200";
+
+const albumLinkButtonClass =
+  "flex min-h-[3.35rem] w-full items-center justify-between gap-3 rounded-[1.15rem] border border-transparent px-4 py-3 text-left text-[0.95rem] font-semibold normal-case tracking-[0.01em] transition duration-200";
+
+const albumActiveNavButtonClass =
+  "border-[#ebe1e5] bg-[#f2eeef] text-[#23191f] shadow-[inset_0_0_0_1px_rgba(232,223,227,0.72)]";
+
+const albumInactiveNavButtonClass =
+  "bg-transparent text-[#7c636e] hover:bg-white/82 hover:text-[#35232c]";
+
+const albumSubtleNavButtonClass =
+  "bg-transparent text-[#8b707b] hover:bg-white/82 hover:text-[#35232c]";
+
+export default function App() {
+  const [stage, setStage] = useState<Stage>(() => readStoredStage());
+  const [albumView, setAlbumView] = useState<AlbumView>(() => readStoredAlbumView());
+  const [photoSlots, setPhotoSlots] = useState<(AlbumItem | null)[]>(() => createEmptySlots(photoSlotCount));
+  const [videoSlots, setVideoSlots] = useState<(AlbumItem | null)[]>(() => createEmptySlots(videoSlotCount));
+  const [hasHydratedAlbum, setHasHydratedAlbum] = useState(false);
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
+  const [cropSession, setCropSession] = useState<{
+    file: File;
+    url: string;
+    slotIndex: number | null;
+    label: string;
+  } | null>(null);
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropOffsetX, setCropOffsetX] = useState(0);
+  const [cropOffsetY, setCropOffsetY] = useState(0);
+  const [cropImageSize, setCropImageSize] = useState<{ width: number; height: number } | null>(null);
+  const [displayedLetter, setDisplayedLetter] = useState("");
+  const [isAlbumSidebarVisible, setIsAlbumSidebarVisible] = useState<boolean>(() => readStoredAlbumSidebarVisible());
+  const [skipLetterTyping, setSkipLetterTyping] = useState(false);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playMusicAfterOpenRef = useRef(false);
+  const createdUrlsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    // Check initial music state from localStorage
+    if (typeof window !== "undefined") {
+      const savedState = window.localStorage.getItem(audioPlaybackStateStorageKey);
+      setIsMusicPlaying(savedState === "playing");
+    }
+    
+    return () => {
+      createdUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
+
+  useEffect(() => {
+    autoLoadBackupIfAvailable().catch((error) => {
+      console.error("Error auto-loading backup:", error);
+    });
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(stageStorageKey, stage);
+  }, [stage]);
+
+  useEffect(() => {
+    window.localStorage.setItem(albumViewStorageKey, albumView);
+  }, [albumView]);
+
+  useEffect(() => {
+    window.localStorage.setItem(albumSidebarVisibilityStorageKey, String(isAlbumSidebarVisible));
+  }, [isAlbumSidebarVisible]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const persistAudioProgress = () => {
+      window.localStorage.setItem(audioPlaybackTimeStorageKey, `${audio.currentTime}`);
+    };
+
+    const persistAudioState = () => {
+      const isPlaying = !audio.paused;
+      window.localStorage.setItem(audioPlaybackStateStorageKey, isPlaying ? "playing" : "paused");
+      setIsMusicPlaying(isPlaying);
+    };
+
+    const handleEnded = () => setIsMusicPlaying(false);
+    
+    audio.addEventListener("timeupdate", persistAudioProgress);
+    audio.addEventListener("play", persistAudioState);
+    audio.addEventListener("pause", persistAudioState);
+    audio.addEventListener("ended", handleEnded);
+    window.addEventListener("beforeunload", persistAudioProgress);
+    window.addEventListener("beforeunload", persistAudioState);
+    
+    return () => {
+      audio.removeEventListener("timeupdate", persistAudioProgress);
+      audio.removeEventListener("play", persistAudioState);
+      audio.removeEventListener("pause", persistAudioState);
+      audio.removeEventListener("ended", handleEnded);
+      window.removeEventListener("beforeunload", persistAudioProgress);
+      window.removeEventListener("beforeunload", persistAudioState);
+    };
+  }, []);
+
+  useEffect(() => {
+    const nextOverflow = stage === "flowers" ? "hidden" : "";
+    document.body.style.overflow = nextOverflow;
+    document.documentElement.style.overflow = nextOverflow;
+
+    return () => {
+      document.body.style.overflow = "";
+      document.documentElement.style.overflow = "";
+    };
+  }, [stage]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (stage === "flowers") {
+      audio.pause();
+      audio.currentTime = 0;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(audioPlaybackTimeStorageKey, "0");
+        window.localStorage.setItem(audioPlaybackStateStorageKey, "paused");
+      }
+      playMusicAfterOpenRef.current = false;
+      return;
+    }
+
+    const restoreAudioState = () => {
+      if (typeof window === "undefined") return;
+
+      const savedTime = Number(window.localStorage.getItem(audioPlaybackTimeStorageKey) ?? "0");
+      const savedState = window.localStorage.getItem(audioPlaybackStateStorageKey);
+      const isSavedPlaying = savedState !== "paused";
+
+      if (Number.isFinite(savedTime) && savedTime > 0 && audio.currentTime < 0.1) {
+        const maxTime = audio.duration ? Math.max(audio.duration - 0.25, 0) : savedTime;
+        audio.currentTime = Math.min(savedTime, maxTime);
+      }
+
+      audio.volume = 0.55;
+      audio.loop = true;
+
+      if (playMusicAfterOpenRef.current || isSavedPlaying) {
+        void audio.play().then(() => {
+          setIsMusicPlaying(true);
+        }).catch((error) => {
+          console.error("Unable to resume music playback.", error);
+          setIsMusicPlaying(false);
+        });
+        playMusicAfterOpenRef.current = false;
+      } else {
+        audio.pause();
+        setIsMusicPlaying(false);
+      }
+    };
+
+    if (audio.readyState >= 1) {
+      restoreAudioState();
+      return;
+    }
+
+    audio.addEventListener("loadedmetadata", restoreAudioState, { once: true });
+    return () => {
+      audio.removeEventListener("loadedmetadata", restoreAudioState);
+    };
+  }, [stage]);
+
+  const releaseTrackedUrl = (url: string) => {
+    URL.revokeObjectURL(url);
+    createdUrlsRef.current = createdUrlsRef.current.filter((currentUrl) => currentUrl !== url);
+  };
+
+  const handleFlowerButtonClick = () => {
+    playMusicAfterOpenRef.current = true;
+    setStage("letter");
+  };
+
+  const handleExportMemories = async () => {
+    try {
+      await exportMemoriesToFile();
+    } catch (error) {
+      console.error("Failed to export memories:", error);
+      alert("Failed to export memories. Please try again.");
+    }
+  };
+
+  const handleAutoEmbedMemories = async () => {
+    try {
+      const memories = await loadStoredMemories();
+      if (memories.length === 0) {
+        alert("No saved memories were found in this browser.");
+        return;
+      }
+
+      await exportMemoriesToFile();
+      alert(`Backup downloaded with ${memories.length} saved memories. Send that file to me so I can restore your photos and videos.`);
+    } catch (error) {
+      console.error("Failed to create backup:", error);
+      alert("Failed to create backup. Please refresh and try again.");
+    }
+  };
+
+  const handleImportMemories = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const confirmImport = confirm(
+      "Import memories from backup file? This will add to your current memories."
+    );
+    if (!confirmImport) return;
+
+    importMemoriesFromFile(file)
+      .then(() => {
+        alert("Memories imported successfully! Refreshing the page...");
+        window.location.reload();
+      })
+      .catch((error) => {
+        console.error("Failed to import memories:", error);
+        alert("Failed to import memories. Please check the file format.");
+      });
+
+    event.target.value = "";
+  };
+
+  const buildAlbumItemFromBlob = ({
+    id,
+    name,
+    label,
+    kind,
+    mimeType,
+    blob,
+  }: Omit<StoredMemoryRecord, "slotKey" | "slotIndex">) => {
+    const url = URL.createObjectURL(blob);
+    createdUrlsRef.current.push(url);
+
+    return {
+      id,
+      url,
+      name,
+      label,
+      kind,
+      mimeType,
+    } satisfies AlbumItem;
+  };
+
+  const loadImage = (source: string) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.src = source;
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+    });
+
+  const createCroppedImageBlob = async (
+    file: File,
+    zoom: number,
+    offsetX: number,
+    offsetY: number,
+  ) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = await loadImage(objectUrl);
+    URL.revokeObjectURL(objectUrl);
+
+    const outputSize = 1200;
+    const canvas = document.createElement("canvas");
+    canvas.width = outputSize;
+    canvas.height = outputSize;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas not supported");
+
+    const { cropSide, sourceX, sourceY } = getCropGeometry(image.width, image.height, zoom, offsetX, offsetY);
+
+    context.drawImage(image, sourceX, sourceY, cropSide, cropSide, 0, 0, outputSize, outputSize);
+
+    return new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error("Unable to create cropped image."));
+        },
+        file.type.startsWith("image/") ? file.type : "image/jpeg",
+        0.92,
+      );
+    });
+  };
+
+  const beginCropSession = (file: File, slotIndex: number | null) => {
+    const url = URL.createObjectURL(file);
+    setCropSession({
+      file,
+      url,
+      slotIndex,
+      label: formatMemoryLabel(file.name, "Sweet Memory"),
+    });
+    setCropImageSize(null);
+    setCropZoom(1);
+    setCropOffsetX(0);
+    setCropOffsetY(0);
+  };
+
+  const handleCancelCrop = () => {
+    if (cropSession) {
+      URL.revokeObjectURL(cropSession.url);
+    }
+    setCropImageSize(null);
+    setCropSession(null);
+  };
+
+  const handleConfirmCrop = async () => {
+    if (!cropSession) return;
+
+    try {
+      const croppedBlob = await createCroppedImageBlob(cropSession.file, cropZoom, cropOffsetX, cropOffsetY);
+      const mimeType = croppedBlob.type || cropSession.file.type || "image/jpeg";
+      const nextItem = buildAlbumItemFromBlob({
+        id: `${cropSession.slotIndex ?? "next"}-${cropSession.file.name}-${cropSession.file.lastModified}`,
+        name: cropSession.file.name,
+        label: cropSession.label,
+        kind: "image",
+        mimeType,
+        blob: croppedBlob,
+      });
+
+      if (cropSession.slotIndex === null) {
+        const nextIndex = photoSlots.findIndex((item) => item === null);
+        const slotIndex = nextIndex === -1 ? 0 : nextIndex;
+        setPhotoSlots((currentSlots) => {
+          const nextSlots = [...currentSlots];
+          const previous = nextSlots[slotIndex];
+          if (previous) releaseTrackedUrl(previous.url);
+          nextSlots[slotIndex] = nextItem;
+          return nextSlots;
+        });
+        setSelectedPhotoId(nextItem.id);
+        setAlbumView("photos");
+        await persistAlbumItem(nextItem, slotIndex, croppedBlob);
+      } else {
+        setPhotoSlots((currentSlots) => {
+          const nextSlots = [...currentSlots];
+          const previous = nextSlots[cropSession.slotIndex!];
+          if (previous) releaseTrackedUrl(previous.url);
+          nextSlots[cropSession.slotIndex!] = nextItem;
+          return nextSlots;
+        });
+        await persistAlbumItem(nextItem, cropSession.slotIndex, croppedBlob);
+      }
+    } catch (error) {
+      console.error("Unable to save the photo.", error);
+    } finally {
+      if (cropSession) URL.revokeObjectURL(cropSession.url);
+      setCropImageSize(null);
+      setCropSession(null);
+    }
+  };
+
+  useEffect(() => {
+    if (cropSession) {
+      setCropZoom(1);
+      setCropOffsetX(0);
+      setCropOffsetY(0);
+    }
+  }, [cropSession]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const hydrateStoredMemories = async () => {
+      try {
+        const [storedMemories, folderMemories] = await Promise.all([
+          loadStoredMemories(),
+          loadFolderMemories()
+        ]);
+        if (isCancelled) return;
+
+        const nextPhotoSlots = createEmptySlots(photoSlotCount);
+        const nextVideoSlots = createEmptySlots(videoSlotCount);
+
+        // First, load from public/memories folder (read-only, deployed with site)
+        let folderPhotoIndex = 0;
+        let folderVideoIndex = 0;
+        for (const item of folderMemories) {
+          if (item.kind === "image" && folderPhotoIndex < photoSlotCount) {
+            nextPhotoSlots[folderPhotoIndex] = item;
+            folderPhotoIndex++;
+          }
+          if (item.kind === "video" && folderVideoIndex < videoSlotCount) {
+            nextVideoSlots[folderVideoIndex] = item;
+            folderVideoIndex++;
+          }
+        }
+
+        // Then, load from IndexedDB (user uploads, can override folder items)
+        for (const record of storedMemories) {
+          const nextItem = buildAlbumItemFromBlob(record);
+
+          if (record.kind === "image" && record.slotIndex < photoSlotCount) {
+            nextPhotoSlots[record.slotIndex] = nextItem;
+          }
+
+          if (record.kind === "video" && record.slotIndex < videoSlotCount) {
+            nextVideoSlots[record.slotIndex] = nextItem;
+          }
+        }
+
+        setPhotoSlots(nextPhotoSlots);
+        setVideoSlots(nextVideoSlots);
+      } catch (error) {
+        console.error("Unable to load saved memories.", error);
+      } finally {
+        if (!isCancelled) {
+          setHasHydratedAlbum(true);
+        }
+      }
+    };
+
+    void hydrateStoredMemories();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (stage === "letter") setSkipLetterTyping(false);
+  }, [stage]);
+
+  useEffect(() => {
+    if (stage !== "letter") return;
+    if (skipLetterTyping) {
+      setDisplayedLetter(letterBodyText);
+      return;
+    }
+
+    setDisplayedLetter("");
+    let charIndex = 0;
+    const chunkSize = letterBodyText.length > 1200 ? 4 : 1;
+    const intervalMs = letterBodyText.length > 1200 ? 18 : 35;
+    const interval = window.setInterval(() => {
+      charIndex += chunkSize;
+      setDisplayedLetter(letterBodyText.slice(0, charIndex));
+      if (charIndex >= letterBodyText.length) window.clearInterval(interval);
+    }, intervalMs);
+    return () => window.clearInterval(interval);
+  }, [skipLetterTyping, stage]);
+
+  const photoItems = photoSlots.filter((item): item is AlbumItem => item !== null);
+  const videoItems = videoSlots.filter((item): item is AlbumItem => item !== null);
+
+  useEffect(() => {
+    if (photoItems.length === 0) {
+      if (selectedPhotoId !== null) setSelectedPhotoId(null);
+      return;
+    }
+
+    const hasSelectedPhoto = photoItems.some((item) => item.id === selectedPhotoId);
+    if (!hasSelectedPhoto) setSelectedPhotoId(photoItems[0].id);
+  }, [photoItems, selectedPhotoId]);
+
+  const displayedLetterParagraphs = splitLetterParagraphs(displayedLetter);
+  const isLetterTyping = displayedLetter.length < letterBodyText.length;
+
+  const createAlbumItem = (file: File, kind: AlbumItem["kind"], slotIndex: number) => {
+    const filePrefix = kind === "image" ? "image/" : "video/";
+    if (!file.type.startsWith(filePrefix)) return null;
+
+    return buildAlbumItemFromBlob({
+      id: `${kind}-${slotIndex}-${file.name}-${file.lastModified}`,
+      name: file.name,
+      label: formatMemoryLabel(file.name, kind === "image" ? "Sweet Memory" : "Sweet Video"),
+      kind,
+      mimeType: file.type,
+      blob: file,
+    });
+  };
+
+  const persistAlbumItem = async (
+    item: AlbumItem,
+    slotIndex: number,
+    blob: Blob,
+  ) => {
+    try {
+      await saveStoredMemory({
+        slotKey: createSlotKey(item.kind, slotIndex),
+        slotIndex,
+        id: item.id,
+        name: item.name,
+        label: item.label,
+        kind: item.kind,
+        mimeType: item.mimeType,
+        blob,
+      });
+    } catch (error) {
+      console.error("Unable to save this memory for later visits.", error);
+    }
+  };
+
+  const handlePhotoSlotUpload = (slotIndex: number) => (event: ChangeEvent<HTMLInputElement>) => {
+    const file = Array.from(event.target.files ?? []).find((currentFile) => currentFile.type.startsWith("image/"));
+    if (!file) {
+      event.target.value = "";
+      return;
+    }
+
+    beginCropSession(file, slotIndex);
+    event.target.value = "";
+  };
+
+  const handleVideoSlotUpload = (slotIndex: number) => async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = Array.from(event.target.files ?? []).find((currentFile) => currentFile.type.startsWith("video/"));
+    if (!file) {
+      event.target.value = "";
+      return;
+    }
+
+    const nextItem = createAlbumItem(file, "video", slotIndex);
+    if (!nextItem) {
+      event.target.value = "";
+      return;
+    }
+
+    setVideoSlots((currentSlots) => {
+      const nextSlots = [...currentSlots];
+      const currentItem = nextSlots[slotIndex];
+      if (currentItem) releaseTrackedUrl(currentItem.url);
+      nextSlots[slotIndex] = nextItem;
+      return nextSlots;
+    });
+
+    try {
+      await persistAlbumItem(nextItem, slotIndex, file);
+    } catch (error) {
+      console.error("Unable to save the uploaded video.", error);
+    }
+
+    setAlbumView("videos");
+    event.target.value = "";
+  };
+
+  const renderAlbumStage = () => (
+    <motion.div
+      key="album-modern"
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -30 }}
+      transition={{ duration: 0.8 }}
+      className="relative mx-auto w-full max-w-7xl overflow-hidden rounded-[2.75rem] border border-[#f0dfe4] bg-[#faf5ef] text-[#1f171c] shadow-[0_36px_110px_rgba(94,53,71,0.16)]"
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,240,231,0.98),_transparent_34%),radial-gradient(circle_at_100%_0%,_rgba(244,213,227,0.7),_transparent_26%),radial-gradient(circle_at_0%_100%,_rgba(226,208,234,0.32),_transparent_26%),radial-gradient(circle_at_50%_50%,_rgba(255,245,250,0.4),_transparent_40%),linear-gradient(180deg,_#fbf7f1_0%,_#f7f0ea_100%)]" />
+
+      <div className="relative z-10 lg:flex">
+        {isAlbumSidebarVisible ? (
+          <aside
+            className="border border-[#efdee5] bg-gradient-to-b from-white/95 to-[#faf5f8]/98 backdrop-blur-xl lg:w-[21rem] lg:shrink-0 lg:border-r shadow-[4px_0_24px_rgba(120,80,100,0.06)]"
+          >
+            <div className="flex h-full flex-col gap-5 px-5 py-6 md:px-6 md:py-7">
+              <div className="rounded-[2rem] border border-[#f0e5ea] bg-gradient-to-b from-white to-[#fdf8fa] p-4 shadow-[0_20px_44px_rgba(118,80,102,0.1)]">
+                <div className="flex items-center justify-between gap-3 px-2 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 w-2 rounded-full bg-[#d4a5b8]" />
+                    <p className="text-[0.7rem] font-bold uppercase tracking-[0.26em] text-[#a67c8d]">Menu</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAlbumSidebarVisible(false)}
+                    className="rounded-full border border-[#e7d4dd] bg-gradient-to-br from-white to-[#faf5f7] px-3.5 py-2 text-[0.74rem] font-semibold text-[#8b6a7a] transition-all hover:bg-[#faf1f5] hover:shadow-md"
+                  >
+                    ✕ Close
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setAlbumView("photos")}
+                    className={`${albumView === "photos" ? "bg-[#efe5e9] text-[#271b20] shadow-[inset_0_0_0_1px_rgba(218,192,204,0.75)]" : "bg-white text-[#7b616d] hover:bg-[#f9f2f5]"} ${albumTabButtonClass}`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <GalleryGlyph className="h-5 w-5" />
+                      <span>Photos</span>
+                    </span>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#7b616c] shadow-[inset_0_0_0_1px_rgba(233,223,228,0.9)]">
+                      {photoItems.length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAlbumView("videos")}
+                    className={`${albumView === "videos" ? "bg-[#efe5e9] text-[#271b20] shadow-[inset_0_0_0_1px_rgba(218,192,204,0.75)]" : "bg-white text-[#7b616d] hover:bg-[#f9f2f5]"} ${albumTabButtonClass}`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <VideoGlyph className="h-5 w-5" />
+                      <span>Videos</span>
+                    </span>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#7b616c] shadow-[inset_0_0_0_1px_rgba(233,223,228,0.9)]">
+                      {videoItems.length}
+                    </span>
+                  </button>
+                </div>
+                <div className="mt-5 border-t border-[#efe4eb] pt-4">
+                  <div className="flex items-center gap-2 px-2 pb-2">
+                    <div className="h-2 w-2 rounded-full bg-[#c4a5d4]" />
+                    <p className="text-[0.7rem] font-bold uppercase tracking-[0.26em] text-[#9d7a8d]">Pages</p>
+                  </div>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setStage("letter")}
+                      className="group flex w-full items-center gap-3 rounded-[1.35rem] border border-transparent bg-gradient-to-r from-white to-[#faf8fa] px-4 py-3 text-[0.95rem] font-semibold text-[#5e434f] transition-all duration-200 hover:border-[#e9d9e1] hover:shadow-md hover:translate-x-0.5"
+                    >
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f5eef2] text-[#9c7a8d] group-hover:bg-[#efe5eb] transition-colors">
+                        <LetterGlyph className="h-4 w-4" />
+                      </span>
+                      <span>Letter</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStage("flowers")}
+                      className="group flex w-full items-center gap-3 rounded-[1.35rem] border border-transparent bg-gradient-to-r from-white to-[#faf8fa] px-4 py-3 text-[0.95rem] font-semibold text-[#5e434f] transition-all duration-200 hover:border-[#e9d9e1] hover:shadow-md hover:translate-x-0.5"
+                    >
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f5eef2] text-[#9c7a8d] group-hover:bg-[#efe5eb] transition-colors">
+                        <BloomGlyph className="h-4 w-4" />
+                      </span>
+                      <span>Your Flowers</span>
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Music Control */}
+                <div className="mt-4 rounded-[1.5rem] border border-[#f0e5ea] bg-gradient-to-br from-[#fdf8fa] to-[#f9f2f6] p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className={`h-2 w-2 rounded-full bg-[#9dd4c4] ${isMusicPlaying ? "animate-pulse" : ""}`} />
+                    <p className="text-[0.7rem] font-bold uppercase tracking-[0.26em] text-[#7a9a8d]">Music</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const audio = audioRef.current;
+                        if (audio) {
+                          if (audio.paused) {
+                            audio.play().catch(() => {});
+                            setIsMusicPlaying(true);
+                          } else {
+                            audio.pause();
+                            setIsMusicPlaying(false);
+                          }
+                        }
+                      }}
+                      className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#b8d4c8] to-[#9bc4b4] text-white shadow-md hover:shadow-lg transition-all hover:scale-105"
+                    >
+                      <span className="text-sm">{isMusicPlaying ? "⏸" : "▶"}</span>
+                    </button>
+                    <div className="flex-1">
+                      <p className="text-[0.8rem] font-semibold text-[#5e7a6d]">Safe Here</p>
+                      <p className="text-[0.65rem] text-[#7a9a8d]">{isMusicPlaying ? "Now Playing" : "Paused"}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        ) : (
+          <div
+            onClick={() => setIsAlbumSidebarVisible(true)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                setIsAlbumSidebarVisible(true);
+              }
+            }}
+            aria-label="Open navigation"
+            className="flex h-full cursor-pointer items-center justify-center border-r border-[#eee1e7] bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,242,245,0.98))] lg:w-[6rem] lg:shrink-0"
+          >
+            <span className="flex h-14 w-14 items-center justify-center rounded-full border border-[#f1dee4] bg-gradient-to-br from-white to-[#faf5f7] shadow-[0_18px_40px_rgba(150,112,130,0.15)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_22px_50px_rgba(150,112,130,0.22)] hover:border-[#e8d5de]">
+              <svg className="h-5 w-5 text-[#9c7a8d]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </span>
+          </div>
+        )}
+
+        <div className="min-w-0 flex-1">
+          <header className="border-b border-[#ead9df] px-6 py-6 md:px-10 md:py-7">
+            <div className="mx-auto flex max-w-3xl flex-col items-center gap-4 text-center lg:max-w-none lg:flex-row lg:items-center lg:justify-between lg:text-left">
+              <div className="space-y-3">
+                <span className="mx-auto inline-flex items-center rounded-full border border-[#efcfd8] bg-white/72 px-4 py-1.5 text-[0.66rem] font-semibold uppercase tracking-[0.32em] text-[#a06077] shadow-[0_12px_26px_rgba(135,91,109,0.08)] lg:mx-0">
+                  {albumView === "photos" ? "Photo Scrapbook" : "Video Keepsakes"}
+                </span>
+                <h1 className="font-display text-[2.45rem] font-semibold tracking-[0.05em] text-[#2a1b22] sm:text-[3.35rem]">
+                  {albumView === "photos" ? "Moments Worth Keeping" : "Scenes We Replay"}
+                </h1>
+              </div>
+            </div>
+          </header>
+
+          {hasHydratedAlbum && photoItems.length === 0 && videoItems.length === 0 ? (
+            <div className="border-b border-[#ead9df] px-6 py-6 md:px-10 md:py-7">
+              <div className="mx-auto max-w-3xl rounded-[1.5rem] bg-[#fff4f6] p-5 text-center text-[#5d3a47] shadow-[0_20px_40px_rgba(166,107,133,0.08)]">
+                <p className="font-semibold text-[1rem]">No saved memories were found in this browser.</p>
+                <p className="mt-2 text-sm text-[#7c5c6f]">
+                  Your photos and videos live only in browser storage. If you added them before, use the backup controls on the left to export them from that browser or import a backup file.
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          <AnimatePresence mode="wait">
+          {albumView === "photos" ? (
+            <motion.section
+              key="photos-view"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.35 }}
+              className="px-6 pb-3 pt-8 md:px-10 md:pb-5 md:pt-10"
+            >
+              <div className="grid grid-flow-dense gap-6 sm:auto-rows-[108px] sm:grid-cols-4 xl:auto-rows-[96px] xl:grid-cols-6">
+                {photoSlots.map((item, index) => {
+                  const layout = item
+                    ? photoScrapbookLayouts[index % photoScrapbookLayouts.length]
+                    : photoPlaceholderLayouts[index % photoPlaceholderLayouts.length];
+
+                  return (
+                    <div
+                      key={`photo-slot-${index}`}
+                      className={`${layout.frameClassName} ${layout.mobileHeightClassName}`}
+                    >
+                      <motion.label
+                        initial={false}
+                        animate={{ rotate: layout.rotation, y: 0 }}
+                        whileHover={{ rotate: layout.rotation + 0.6, y: -7, scale: 1.012 }}
+                        transition={{ duration: 0.26, ease: "easeOut" }}
+                        className={`group relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[2rem] border p-3 ${
+                          item
+                            ? "border-[#eed4db] bg-[linear-gradient(180deg,_#fffdfa_0%,_#fff4f2_100%)] shadow-[0_24px_64px_rgba(165,103,121,0.22)]"
+                            : "border-dashed border-[#eab0c3] bg-[linear-gradient(180deg,_rgba(255,251,248,0.98),_rgba(252,229,237,0.82))] shadow-[0_20px_54px_rgba(236,181,196,0.22)]"
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePhotoSlotUpload(index)}
+                          className="hidden"
+                        />
+
+                        <span
+                          className="pointer-events-none absolute left-5 top-1 z-20 h-5 w-16 rounded-sm bg-[#fff1c9]/88 shadow-[0_4px_10px_rgba(0,0,0,0.08)]"
+                          style={{ transform: `rotate(${layout.tapeLeftRotation}deg)` }}
+                        />
+                        <span
+                          className="pointer-events-none absolute right-5 top-1 z-20 h-5 w-12 rounded-sm bg-white/76 shadow-[0_4px_10px_rgba(0,0,0,0.08)]"
+                          style={{ transform: `rotate(${layout.tapeRightRotation}deg)` }}
+                        />
+
+                        {item ? (
+                          <>
+                            <div className="relative flex-1 overflow-hidden rounded-[1.45rem] border border-[#f7dde4] bg-[#fff6f7]">
+                              <img
+                                src={item.url}
+                                alt={item.label}
+                                className="absolute inset-0 h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.05]"
+                              />
+                              <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(255,255,255,0.02),_transparent_56%,_rgba(0,0,0,0.08))]" />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="relative flex flex-1 flex-col items-center justify-center rounded-[1.45rem] border border-white/60 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.82),_transparent_38%),radial-gradient(circle_at_bottom,_rgba(246,186,203,0.46),_transparent_28%)] px-3 py-4 text-center">
+                            <div className="grid h-16 w-16 place-items-center rounded-full bg-[#f9a9ba] text-[#ff315d] shadow-[0_16px_34px_rgba(241,134,159,0.35)]">
+                              <UploadGlyph className="h-8 w-8" />
+                            </div>
+                            <p className="font-display relative mt-4 text-[1.55rem] font-semibold text-[#331b26]">Add Photo</p>
+                            <p className="relative mt-1 text-[0.92rem] leading-5 text-[#5a3c4f]">Pin a memory into the scrapbook</p>
+                          </div>
+                        )}
+                      </motion.label>
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.section>
+          ) : (
+            <motion.section
+              key="videos-view"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.35 }}
+              className="px-6 py-8 md:px-10 md:py-10"
+            >
+              <div className="grid gap-7 lg:grid-cols-3">
+                {videoSlots.map((item, index) =>
+                  item ? (
+                    <motion.div
+                      key={`video-slot-${index}`}
+                      initial={{ opacity: 0, y: 14, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.4, delay: index * 0.08 }}
+                      className="relative overflow-visible rounded-[2.2rem] border border-[#f0d3de] bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.92),_rgba(252,239,244,0.72)_58%,_rgba(245,221,231,0.46)_100%)] p-4 shadow-[0_24px_64px_rgba(110,55,73,0.20)]"
+                    >
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.82),_transparent_38%),radial-gradient(circle_at_bottom_right,_rgba(246,186,203,0.42),_transparent_28%)]" />
+
+                      <div className="relative mx-auto transition duration-300 ease-out hover:-translate-y-2 hover:scale-[1.01]">
+                          <div
+                            className="pointer-events-none absolute inset-[-1rem] rounded-[2.1rem] bg-[radial-gradient(circle,_rgba(245,154,191,0.24),_rgba(245,154,191,0.06)_56%,_transparent_78%)] blur-3xl"
+                          />
+                          <div className="relative overflow-hidden rounded-[1.9rem] border border-white/75 bg-black shadow-[0_36px_90px_rgba(37,15,24,0.34)]">
+                            <label
+                              className="absolute right-3 top-3 z-20 grid h-12 w-12 cursor-pointer place-items-center rounded-full border border-white/25 bg-black/38 text-white shadow-[0_18px_38px_rgba(0,0,0,0.36)] backdrop-blur-md transition hover:scale-105 hover:bg-black/52"
+                              aria-label={`Replace video ${index + 1}`}
+                              title={`Replace video ${index + 1}`}
+                            >
+                              <UploadGlyph className="h-6 w-6" />
+                              <input
+                                type="file"
+                                accept="video/*"
+                                onChange={handleVideoSlotUpload(index)}
+                                className="hidden"
+                              />
+                            </label>
+                            <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(180deg,_rgba(255,255,255,0.12),_transparent_18%,_transparent_72%,_rgba(0,0,0,0.34))]" />
+                            <div className="pointer-events-none absolute inset-x-[8%] top-3 z-10 h-10 rounded-full bg-white/20 blur-xl" />
+                            <video
+                              src={item.url}
+                              controls
+                              muted
+                              loop
+                              autoPlay
+                              playsInline
+                              preload="metadata"
+                              className="h-[22rem] w-full object-cover object-center"
+                            />
+                          </div>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <label
+                      key={`video-slot-${index}`}
+                      className="group relative flex aspect-[4/5] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-[2rem] border border-[#f0d3de] bg-[linear-gradient(180deg,_rgba(255,252,249,0.98),_rgba(249,235,240,0.92))] shadow-[0_24px_64px_rgba(110,55,73,0.18)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_28px_70px_rgba(110,55,73,0.22)]"
+                    >
+                      <input
+                        type="file"
+                        accept="video/*"
+                        onChange={handleVideoSlotUpload(index)}
+                        className="hidden"
+                      />
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.82),_transparent_38%),radial-gradient(circle_at_bottom,_rgba(246,186,203,0.36),_transparent_28%)]" />
+                      <div className="grid h-24 w-24 place-items-center rounded-full bg-[#f9a9ba] text-[#ff315d] shadow-[0_16px_34px_rgba(241,134,159,0.35)]">
+                        <UploadGlyph className="h-11 w-11" />
+                      </div>
+                      <p className="font-display relative mt-6 text-[2.2rem] font-semibold text-[#331b26]">{`Video ${index + 1}`}</p>
+                      <p className="relative mt-2 text-base text-[#5a3c4f]">Upload for a clean framed preview</p>
+                    </label>
+                  ),
+                )}
+              </div>
+            </motion.section>
+          )}
+          </AnimatePresence>
+        </div>
+      </div>
+    </motion.div>
+  );
+
+  const isFlowersStage = stage === "flowers";
+  const cropPreviewGeometry =
+    cropSession && cropImageSize
+      ? getCropGeometry(cropImageSize.width, cropImageSize.height, cropZoom, cropOffsetX, cropOffsetY)
+      : null;
+
+  return (
+    <div
+      className={
+        isFlowersStage
+          ? "h-[100dvh] overflow-hidden bg-[#110d18]"
+          : "min-h-screen bg-[radial-gradient(circle_at_top,_rgba(254,241,236,0.9),_transparent_28%),radial-gradient(circle_at_bottom_left,_rgba(214,182,203,0.18),_transparent_26%),linear-gradient(135deg,_#f9f1eb_0%,_#f8eef1_46%,_#eee5f0_100%)] p-4 sm:p-6"
+      }
+    >
+      <audio ref={audioRef} src={musicTrackPath} preload="auto" loop aria-hidden="true" className="hidden" />
+
+      <AnimatePresence mode="wait">
+        {stage === "flowers" && (
+          <motion.div
+            key="flowers"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.8 }}
+            className="relative isolate flex h-[100dvh] items-center justify-center overflow-hidden bg-[#100913] px-4 text-white sm:px-8"
+          >
+            {/* Smooth romantic gradient background */}
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,_#1a0f1e_0%,_#2d1a35_30%,_#3d2242_60%,_#1a0f1e_100%)]" />
+            {/* Soft pink/purple gradient overlays */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,_rgba(255,182,193,0.25),_transparent_50%),radial-gradient(circle_at_0%_100%,_rgba(147,112,219,0.18),_transparent_45%),radial-gradient(circle_at_100%_100%,_rgba(255,105,180,0.15),_transparent_40%),radial-gradient(circle_at_50%_50%,_rgba(255,218,185,0.08),_transparent_60%)]" />
+            {/* Soft noise texture for depth */}
+            <div className="absolute inset-0 opacity-[0.03] bg-[url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noise%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noise)%22/%3E%3C/svg%3E')]" />
+            <div className="pointer-events-none absolute left-[-8%] top-[14%] h-[22rem] w-[22rem] rounded-full bg-[radial-gradient(circle,_rgba(255,167,199,0.32),_transparent_68%)] blur-3xl" />
+            <div className="pointer-events-none absolute right-[-10%] top-[8%] h-[28rem] w-[28rem] rounded-full bg-[radial-gradient(circle,_rgba(199,145,166,0.28),_transparent_68%)] blur-3xl" />
+            <div className="pointer-events-none absolute left-[12%] top-[26%] h-32 w-32 rounded-full bg-[radial-gradient(circle,_rgba(255,224,239,0.32),_transparent_72%)] blur-3xl opacity-90" />
+            <div className="pointer-events-none absolute right-[16%] top-[30%] h-24 w-24 rounded-full bg-[radial-gradient(circle,_rgba(238,174,203,0.28),_transparent_74%)] blur-3xl opacity-85" />
+            <div className="pointer-events-none absolute left-[42%] top-[12%] h-16 w-16 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.25),_transparent_74%)] blur-2xl opacity-75" />
+            {/* Additional glow spots */}
+            <div className="pointer-events-none absolute left-[5%] bottom-[20%] h-40 w-40 rounded-full bg-[radial-gradient(circle,_rgba(255,182,193,0.25),_transparent_70%)] blur-3xl opacity-70" />
+            <div className="pointer-events-none absolute right-[8%] bottom-[15%] h-36 w-36 rounded-full bg-[radial-gradient(circle,_rgba(221,160,221,0.22),_transparent_70%)] blur-3xl opacity-65" />
+            <div className="pointer-events-none absolute left-[50%] top-[5%] h-20 w-20 rounded-full bg-[radial-gradient(circle,_rgba(255,218,185,0.3),_transparent_70%)] blur-2xl opacity-60" />
+
+            {roseSparkles.map((sparkle, index) => (
+              <motion.span
+                key={`sparkle-${index}`}
+                className="absolute rounded-full bg-white shadow-[0_0_16px_rgba(255,255,255,0.32)]"
+                style={{ left: sparkle.left, top: sparkle.top, width: sparkle.size, height: sparkle.size }}
+                animate={{ opacity: [0.15, sparkle.opacity, 0.15], scale: [0.8, 1.25, 0.8] }}
+                transition={{ duration: sparkle.duration, repeat: Infinity, delay: sparkle.delay, ease: "easeInOut" }}
+              />
+            ))}
+
+            {driftingPetals.map((petal) => (
+              <motion.span
+                key={petal.id}
+                className="absolute block h-4 w-7 rounded-[100%_90%_90%_100%] bg-gradient-to-br from-rose-100 via-pink-300 to-pink-500 opacity-40 blur-[0.3px]"
+                style={{ left: petal.left, top: petal.top, rotate: `${petal.rotate}deg` }}
+                animate={{
+                  y: [0, 26, 52, 0],
+                  x: [0, -10, 10, 0],
+                  rotate: [petal.rotate, petal.rotate + 12, petal.rotate - 8, petal.rotate],
+                  opacity: [0, 0.42, 0.2, 0],
+                }}
+                transition={{ duration: petal.duration, repeat: Infinity, delay: petal.delay, ease: "easeInOut" }}
+              />
+            ))}
+            {/* Floating Hearts */}
+            {floatingHearts.map((heart) => (
+              <motion.span
+                key={heart.id}
+                className="absolute pointer-events-none"
+                style={{ 
+                  left: heart.left, 
+                  top: heart.top,
+                  fontSize: heart.size,
+                  color: heart.color,
+                }}
+                animate={{ 
+                  y: [0, -30, 0], 
+                  opacity: [0, heart.opacity, 0],
+                  scale: [0.6, 1, 0.6],
+                }}
+                transition={{ 
+                  duration: heart.duration, 
+                  repeat: Infinity, 
+                  delay: heart.delay,
+                  ease: "easeInOut" 
+                }}
+              >
+                ♥
+              </motion.span>
+            ))}
+            
+            {/* Golden Sparkles */}
+            {goldenSparkles.map((sparkle, index) => (
+              <motion.span
+                key={`gold-sparkle-${index}`}
+                className="absolute rounded-full pointer-events-none"
+                style={{ 
+                  left: sparkle.left, 
+                  top: sparkle.top, 
+                  width: sparkle.size, 
+                  height: sparkle.size,
+                  background: "radial-gradient(circle, #ffd700 0%, #ffaa00 50%, transparent 70%)",
+                  boxShadow: "0 0 10px #ffd700, 0 0 20px #ffaa00",
+                }}
+                animate={{ 
+                  opacity: [0.2, sparkle.opacity, 0.2], 
+                  scale: [0.5, 1.3, 0.5],
+                  rotate: [0, 180, 360],
+                }}
+                transition={{ 
+                  duration: sparkle.duration, 
+                  repeat: Infinity, 
+                  delay: sparkle.delay,
+                  ease: "easeInOut" 
+                }}
+              />
+            ))}
+            
+            {/* Twinkling Stars */}
+            {twinklingStars.map((star) => (
+              <motion.span
+                key={star.id}
+                className="absolute pointer-events-none"
+                style={{ 
+                  left: star.left, 
+                  top: star.top,
+                  fontSize: star.size,
+                  color: star.color,
+                  textShadow: `0 0 8px ${star.color}, 0 0 16px ${star.color}`,
+                }}
+                animate={{ 
+                  opacity: [0.3, 1, 0.3],
+                  scale: [0.8, 1.2, 0.8],
+                }}
+                transition={{ 
+                  duration: star.duration, 
+                  repeat: Infinity, 
+                  delay: star.delay,
+                  ease: "easeInOut" 
+                }}
+              >
+                ✦
+              </motion.span>
+            ))}
+
+            {fallingPetals.map((petal) => (
+              <motion.span
+                key={petal.id}
+                className="pointer-events-none absolute top-[-12%] block rounded-[100%_86%_98%_88%] bg-[linear-gradient(135deg,_#ffe6ee_0%,_#ff9fc2_55%,_#cf2d66_100%)] shadow-[0_0_22px_rgba(255,113,163,0.14)]"
+                style={{
+                  left: petal.left,
+                  width: petal.width,
+                  height: petal.height,
+                  opacity: petal.opacity,
+                  filter: `blur(${petal.blur}px)`,
+                  rotate: `${petal.rotate}deg`,
+                }}
+                animate={{
+                  y: ["-10vh", "112vh"],
+                  x: [0, petal.drift, petal.drift * -0.3, petal.drift * 0.8],
+                  rotate: [petal.rotate, petal.rotate + 90, petal.rotate - 45, petal.rotate + 120],
+                  opacity: [0, petal.opacity, petal.opacity * 0.9, 0],
+                }}
+                transition={{ duration: petal.duration, repeat: Infinity, delay: petal.delay, ease: "linear" }}
+              />
+            ))}
+
+            <div className="relative z-10 mx-auto flex h-full w-full max-w-6xl flex-col items-center pt-5 sm:pt-7">
+              <motion.div
+                initial={{ opacity: 0, y: -18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+                className="mx-auto max-w-4xl text-center"
+              >
+                <p className="font-script text-[1.8rem] leading-none text-[#ffd4e3] drop-shadow-[0_10px_25px_rgba(0,0,0,0.26)] sm:text-[2.4rem]">
+                  For the one who still feels like home
+                </p>
+                <h1 className="font-display mt-3 text-[2rem] font-semibold uppercase tracking-[0.18em] text-[#fff6f8] [text-shadow:0_10px_34px_rgba(0,0,0,0.42)] sm:text-[2.6rem] lg:text-[3.2rem]">
+                  I Love You Always
+                </h1>
+              </motion.div>
+
+              <div className="relative mt-2 flex w-full flex-1 items-start justify-center sm:mt-3">
+                <div className="relative flex w-full max-w-[36rem] flex-col items-center justify-center">
+                  <div className="pointer-events-none absolute bottom-[12%] h-16 w-[88%] rounded-[100%] bg-[radial-gradient(circle,_rgba(255,182,204,0.28),_rgba(255,182,204,0.06)_48%,_transparent_72%)] blur-2xl" />
+
+                  <motion.button
+                    type="button"
+                    onClick={handleFlowerButtonClick}
+                    whileHover={{ scale: 1.02, y: -6 }}
+                    whileTap={{ scale: 0.985 }}
+                    animate={{ y: [0, -8, 0], rotate: [-0.4, 0.35, -0.4] }}
+                    transition={{ duration: 8.4, repeat: Infinity, ease: "easeInOut" }}
+                    className="group relative flex w-full max-w-[26rem] cursor-pointer flex-col items-center justify-center gap-4 rounded-[2.6rem] bg-[radial-gradient(circle,_rgba(255,234,241,0.75),_rgba(255,217,229,0.45),_transparent_85%)] backdrop-blur-sm px-5 py-5 shadow-[0_28px_70px_rgba(133,61,91,0.15)] transition hover:bg-[radial-gradient(circle,_rgba(255,234,241,0.85),_rgba(255,217,229,0.55),_transparent_80%)] hover:shadow-[0_40px_90px_rgba(140,72,106,0.25)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200/70 focus-visible:ring-offset-0 sm:max-w-[28rem]"
+                    aria-label="Open the bouquet"
+                  >
+                    <div className="pointer-events-none absolute inset-x-10 top-4 h-12 rounded-full bg-pink-100/90 blur-2xl" />
+                    <div className="pointer-events-none absolute h-[21rem] w-[21rem] rounded-full bg-[radial-gradient(circle,_rgba(255,224,236,0.35),_rgba(255,182,193,0.15)_50%,_transparent_70%)] blur-3xl sm:h-[23rem] sm:w-[23rem]" />
+                    <div className="pointer-events-none absolute inset-x-10 bottom-10 h-16 rounded-full bg-[radial-gradient(circle,_rgba(253,215,230,0.35),_transparent_70%)] opacity-0 blur-2xl transition duration-300 group-hover:opacity-100" />
+                    <div className="pointer-events-none absolute -bottom-3 left-1/2 h-10 w-[70%] -translate-x-1/2 rounded-[100%] bg-[radial-gradient(circle,_rgba(255,187,201,0.35),_transparent_70%)] blur-xl" />
+                    <div className="pointer-events-none absolute -top-8 left-1/2 h-16 w-16 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,_rgba(255,255,255,0.6),_transparent_70%)] blur-xl" />
+                    <div className="relative z-10 flex flex-col items-center gap-2" />
+                {/* Purple Glowing Flowers */}
+                <svg
+                  viewBox="0 0 400 500"
+                  className="relative mx-auto h-auto w-[min(50vw,16rem)] drop-shadow-[0_0_40px_rgba(138,43,226,0.4)] sm:w-[min(45vw,18rem)] md:w-[min(40vw,20rem)]"
+                  aria-label="Purple glowing flowers"
+                >
+                  <defs>
+                    <radialGradient id="purplePetal" cx="50%" cy="30%">
+                      <stop offset="0%" stopColor="#e8a4ff" />
+                      <stop offset="40%" stopColor="#c44fd9" />
+                      <stop offset="100%" stopColor="#8a2be2" />
+                    </radialGradient>
+                    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur stdDeviation="4" result="blur"/>
+                      <feMerge>
+                        <feMergeNode in="blur"/>
+                        <feMergeNode in="SourceGraphic"/>
+                      </feMerge>
+                    </filter>
+                    <linearGradient id="stemGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="#4a7c59" />
+                      <stop offset="100%" stopColor="#2d5016" />
+                    </linearGradient>
+                  </defs>
+                  
+                  {/* Left flower */}
+                  <g transform="translate(120, 280)">
+                    <path d="M0,0 Q-10,80 -5,150" stroke="url(#stemGrad)" strokeWidth="4" fill="none" />
+                    <ellipse cx="-25" cy="60" rx="15" ry="8" fill="#4a7c59" transform="rotate(-30)" />
+                    <ellipse cx="20" cy="100" rx="12" ry="6" fill="#4a7c59" transform="rotate(25)" />
+                    <ellipse cx="0" cy="-20" rx="18" ry="25" fill="url(#purplePetal)" filter="url(#glow)" />
+                    <ellipse cx="0" cy="-20" rx="18" ry="25" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(72)" />
+                    <ellipse cx="0" cy="-20" rx="18" ry="25" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(144)" />
+                    <ellipse cx="0" cy="-20" rx="18" ry="25" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(216)" />
+                    <ellipse cx="0" cy="-20" rx="18" ry="25" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(288)" />
+                    <circle cx="0" cy="0" r="12" fill="#fff" filter="url(#glow)" opacity="0.9" />
+                    <circle cx="0" cy="0" r="8" fill="#ff69b4" opacity="0.6" />
+                  </g>
+                  
+                  {/* Center flower */}
+                  <g transform="translate(200, 250)">
+                    <path d="M0,0 Q5,100 0,180" stroke="url(#stemGrad)" strokeWidth="5" fill="none" />
+                    <ellipse cx="-30" cy="80" rx="18" ry="10" fill="#4a7c59" transform="rotate(-25)" />
+                    <ellipse cx="25" cy="120" rx="15" ry="8" fill="#4a7c59" transform="rotate(20)" />
+                    <ellipse cx="-20" cy="150" rx="12" ry="6" fill="#4a7c59" transform="rotate(-15)" />
+                    <ellipse cx="0" cy="-25" rx="22" ry="30" fill="url(#purplePetal)" filter="url(#glow)" />
+                    <ellipse cx="0" cy="-25" rx="22" ry="30" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(60)" />
+                    <ellipse cx="0" cy="-25" rx="22" ry="30" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(120)" />
+                    <ellipse cx="0" cy="-25" rx="22" ry="30" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(180)" />
+                    <ellipse cx="0" cy="-25" rx="22" ry="30" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(240)" />
+                    <ellipse cx="0" cy="-25" rx="22" ry="30" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(300)" />
+                    <circle cx="0" cy="0" r="15" fill="#fff" filter="url(#glow)" opacity="0.95" />
+                    <circle cx="0" cy="0" r="10" fill="#ff69b4" opacity="0.7" />
+                  </g>
+                  
+                  {/* Right flower */}
+                  <g transform="translate(280, 290)">
+                    <path d="M0,0 Q8,70 5,140" stroke="url(#stemGrad)" strokeWidth="4" fill="none" />
+                    <ellipse cx="25" cy="50" rx="14" ry="7" fill="#4a7c59" transform="rotate(30)" />
+                    <ellipse cx="-18" cy="90" rx="12" ry="6" fill="#4a7c59" transform="rotate(-20)" />
+                    <ellipse cx="0" cy="-18" rx="16" ry="22" fill="url(#purplePetal)" filter="url(#glow)" />
+                    <ellipse cx="0" cy="-18" rx="16" ry="22" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(72)" />
+                    <ellipse cx="0" cy="-18" rx="16" ry="22" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(144)" />
+                    <ellipse cx="0" cy="-18" rx="16" ry="22" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(216)" />
+                    <ellipse cx="0" cy="-18" rx="16" ry="22" fill="url(#purplePetal)" filter="url(#glow)" transform="rotate(288)" />
+                    <circle cx="0" cy="0" r="11" fill="#fff" filter="url(#glow)" opacity="0.9" />
+                    <circle cx="0" cy="0" r="7" fill="#ff69b4" opacity="0.6" />
+                  </g>
+                  <radialGradient id="petalLavenderInner" cx="50%" cy="40%">
+                    <stop offset="0%" stopColor="#f0e6ff" />
+                    <stop offset="72%" stopColor="#b794f6" />
+                    <stop offset="100%" stopColor="#805ad5" />
+                  </radialGradient>
+                  <linearGradient id="paperBack" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#f6d9df" stopOpacity="0.76" />
+                    <stop offset="100%" stopColor="#c8aebe" stopOpacity="0.28" />
+                  </linearGradient>
+                  <linearGradient id="paperFront" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#fff7ef" />
+                    <stop offset="58%" stopColor="#f6e0e5" />
+                    <stop offset="100%" stopColor="#efdbe1" />
+                  </linearGradient>
+                  <pattern id="paperGrain" patternUnits="userSpaceOnUse" width="6" height="6">
+                    <circle cx="1" cy="1" r="0.8" fill="rgba(255,255,255,0.22)" />
+                    <circle cx="4" cy="4" r="0.55" fill="rgba(255,255,255,0.16)" />
+                  </pattern>
+                  <filter id="wrapLift" x="-50%" y="-50%" width="200%" height="200%">
+                    <feDropShadow dx="0" dy="5" stdDeviation="4" floodColor="rgba(0,0,0,0.18)" />
+                  </filter>
+                  <linearGradient id="ribbonGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#8e4560" />
+                    <stop offset="38%" stopColor="#de8daf" />
+                    <stop offset="58%" stopColor="#f5b4ca" />
+                    <stop offset="100%" stopColor="#a8506f" />
+                  </linearGradient>
+                  <radialGradient id="bouquetGlow" cx="50%" cy="40%" r="60%">
+                    <stop offset="0%" stopColor="#ffe7f2" stopOpacity="0.72" />
+                    <stop offset="55%" stopColor="#f9d4e4" stopOpacity="0.24" />
+                    <stop offset="100%" stopColor="#f0c8de" stopOpacity="0" />
+                  </radialGradient>
+                  <filter id="petalDepthShadow" x="-35%" y="-35%" width="170%" height="170%">
+                    <feDropShadow dx="0" dy="3" stdDeviation="2.1" floodColor="rgba(0,0,0,0.16)" />
+                  </filter>
+                  <filter id="backFlowerBlur" x="-30%" y="-30%" width="160%" height="160%">
+                    <feGaussianBlur stdDeviation="1.4" />
+                  </filter>
+                  <filter id="bloomGlowBlur" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="14" />
+                  </filter>
+                </defs>
+
+                <ellipse cx="210" cy="548" rx="132" ry="34" fill="rgba(21, 16, 32, 0.45)" />
+                <ellipse cx="210" cy="556" rx="150" ry="42" fill="rgba(20, 14, 30, 0.22)" className="blur-[10px]" />
+
+                {accentSprigs.map((sprig, sprigIndex) => (
+                  <g key={sprig.id}>
+                    <motion.path
+                      d={sprig.path}
+                      stroke="rgba(126, 166, 118, 0.72)"
+                      strokeWidth="3"
+                      fill="none"
+                      strokeLinecap="round"
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 1.3, delay: 0.18 + sprigIndex * 0.12, ease: "easeOut" }}
+                    />
+                    {sprig.blossoms.map((blossom, blossomIndex) => (
+                      <motion.g
+                        key={`${sprig.id}-blossom-${blossomIndex}`}
+                        initial={{ opacity: 0, scale: 0.4 }}
+                        animate={{ opacity: 1, scale: blossom.scale }}
+                        transition={{ duration: 0.55, delay: 1 + sprigIndex * 0.12 + blossomIndex * 0.08 }}
+                        style={{ transformOrigin: `${blossom.x}px ${blossom.y}px` }}
+                      >
+                        {[0, 1, 2, 3, 4].map((petalIndex) => (
+                          <ellipse
+                            key={`${sprig.id}-petal-${blossomIndex}-${petalIndex}`}
+                            cx={blossom.x}
+                            cy={blossom.y - 9}
+                            rx="6"
+                            ry="12"
+                            transform={`rotate(${petalIndex * 72} ${blossom.x} ${blossom.y})`}
+                            fill="#fff6fb"
+                            opacity="0.94"
+                          />
+                        ))}
+                        <circle cx={blossom.x} cy={blossom.y} r="4.2" fill="#f2c879" />
+                      </motion.g>
+                    ))}
+                  </g>
+                ))}
+
+                <circle cx="210" cy="220" r="116" fill="url(#bouquetGlow)" opacity="0.55" />
+                <path d="M78 548 L210 274 L342 548 Q209 608 78 548 Z" fill="url(#paperBack)" opacity="0.85" />
+
+                {bouquetFlowers.map((flower, flowerIndex) => (
+                  <g key={flower.id} filter={flower.isBackFlower ? "url(#backFlowerBlur)" : undefined}>
+                    <motion.path
+                      d={flower.stemPath}
+                      stroke="url(#stemGradient)"
+                      strokeWidth={flower.stemThickness ?? 8}
+                      fill="none"
+                      strokeLinecap="round"
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 1.6, delay: flowerIndex * 0.2, ease: "easeOut" }}
+                    />
+                    {flower.leaves.map((leaf, leafIndex) => (
+                      <motion.ellipse
+                        key={`${flower.id}-leaf-${leafIndex}`}
+                        cx={leaf.cx}
+                        cy={leaf.cy}
+                        rx={leaf.rx}
+                        ry={leaf.ry}
+                        fill={`url(#${leaf.gradient})`}
+                        transform={`rotate(${leaf.rotation} ${leaf.cx} ${leaf.cy})`}
+                        initial={{ opacity: 0, scale: 0.2 }}
+                        animate={{ opacity: 0.98, scale: 1 }}
+                        transition={{
+                          duration: 0.6,
+                          delay: 0.55 + flowerIndex * 0.16 + leafIndex * 0.12,
+                          ease: "easeOut",
+                        }}
+                        style={{ transformOrigin: `${leaf.cx}px ${leaf.cy}px` }}
+                      />
+                    ))}
+                    <motion.g
+                      initial={{ opacity: 0, scale: 0.7, y: 18 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      transition={{ duration: 0.75, delay: 0.82 + flowerIndex * 0.18, ease: "backOut" }}
+                    >
+                      <motion.g
+                        animate={{ rotate: flower.sway }}
+                        transition={{ duration: flower.swayDuration, repeat: Infinity, ease: "easeInOut" }}
+                        style={{ transformOrigin: `${flower.x}px ${flower.y + 18}px` }}
+                      >
+                        <ellipse
+                          cx={flower.x}
+                          cy={flower.y - 4 * flower.scale}
+                          rx={56 * flower.scale}
+                          ry={50 * flower.scale}
+                          fill={flower.bloomGlow}
+                          opacity="0.8"
+                          filter="url(#bloomGlowBlur)"
+                        />
+                        {Array.from({ length: flower.outerPetalCount }, (_, petalIndex) => {
+                          const baseAngle = (petalIndex * 360) / flower.outerPetalCount + (flower.outerAngleOffset ?? 0);
+                          const angle = baseAngle + (petalIndex % 2 === 0 ? -3.2 : 3.4);
+                          const rx = flower.outerPetalRx * flower.scale * (0.92 + ((petalIndex % 3) * 0.03));
+                          const ry = flower.outerPetalRy * flower.scale * (0.90 + ((petalIndex % 4) * 0.02));
+                          const opacity = 0.36 + ((petalIndex % 5) * 0.014);
+                          return (
+                            <ellipse
+                              key={`${flower.id}-shadow-${petalIndex}`}
+                              cx={flower.x}
+                              cy={flower.y - flower.outerPetalRy * flower.scale * 0.94}
+                              rx={rx}
+                              ry={ry * 1.08}
+                              transform={`rotate(${angle} ${flower.x} ${flower.y})`}
+                              fill={`url(#${flower.outerGradient})`}
+                              opacity={opacity}
+                            />
+                          );
+                        })}
+                        {Array.from({ length: flower.outerPetalCount }, (_, petalIndex) => {
+                          const baseAngle = (petalIndex * 360) / flower.outerPetalCount + (flower.outerAngleOffset ?? 0);
+                          const angle = baseAngle + (petalIndex % 2 === 0 ? 1.7 : -2.5);
+                          const rx = flower.outerPetalRx * flower.scale * (0.9 + ((petalIndex % 4) * 0.02));
+                          const ry = flower.outerPetalRy * flower.scale * (0.94 + ((petalIndex % 3) * 0.015));
+                          return (
+                            <ellipse
+                              key={`${flower.id}-outer-${petalIndex}`}
+                              cx={flower.x}
+                              cy={flower.y - flower.outerPetalRy * flower.scale * 0.88}
+                              rx={rx}
+                              ry={ry}
+                              transform={`rotate(${angle} ${flower.x} ${flower.y})`}
+                              fill={`url(#${flower.outerGradient})`}
+                              opacity="0.96"
+                              style={flower.id === "center" ? { filter: "url(#petalDepthShadow)" } : undefined}
+                            />
+                          );
+                        })}
+                        {Array.from({ length: flower.innerPetalCount }, (_, petalIndex) => {
+                          const baseAngle = (petalIndex * 360) / flower.innerPetalCount + (flower.innerAngleOffset ?? 0);
+                          const angle = baseAngle + (petalIndex % 2 === 0 ? -5.3 : 4.2);
+                          const rx = flower.innerPetalRx * flower.scale * (0.92 + ((petalIndex % 3) * 0.02));
+                          const ry = flower.innerPetalRy * flower.scale * (0.92 + ((petalIndex % 4) * 0.013));
+                          return (
+                            <ellipse
+                              key={`${flower.id}-inner-${petalIndex}`}
+                              cx={flower.x}
+                              cy={flower.y - flower.innerPetalRy * flower.scale * 0.9}
+                              rx={rx}
+                              ry={ry}
+                              transform={`rotate(${angle} ${flower.x} ${flower.y})`}
+                              fill={`url(#${flower.innerGradient})`}
+                              opacity="0.94"
+                            />
+                          );
+                        })}
+                        {Array.from({ length: 6 }, (_, petalIndex) => (
+                          <ellipse
+                            key={`${flower.id}-core-${petalIndex}`}
+                            cx={flower.x}
+                            cy={flower.y - 16 * flower.scale}
+                            rx={7.5 * flower.scale}
+                            ry={16 * flower.scale}
+                            transform={`rotate(${petalIndex * 60 + 14} ${flower.x} ${flower.y})`}
+                            fill="rgba(255,255,255,0.26)"
+                            opacity="0.85"
+                          />
+                        ))}
+                        <circle cx={flower.x} cy={flower.y} r={18 * flower.scale} fill={flower.centerColor} />
+                        <circle cx={flower.x} cy={flower.y} r={12 * flower.scale} fill="#ffe8a0" opacity="0.75" />
+                        <circle
+                          cx={flower.x}
+                          cy={flower.y}
+                          r={9 * flower.scale}
+                          fill="rgba(255,247,196,0.85)"
+                          stroke="rgba(151,83,10,0.15)"
+                          strokeWidth={1.2 * flower.scale}
+                        />
+                        {Array.from({ length: 10 }, (_, dotIndex) => {
+                          const angle = (dotIndex / 10) * Math.PI * 2;
+                          const radius = 8 * flower.scale;
+                          return (
+                            <circle
+                              key={`${flower.id}-dot-${dotIndex}`}
+                              cx={flower.x + Math.cos(angle) * radius}
+                              cy={flower.y + Math.sin(angle) * radius}
+                              r={1.55 * flower.scale}
+                              fill={flower.dotColor}
+                            />
+                          );
+                        })}
+                        <circle
+                          cx={flower.x - 5 * flower.scale}
+                          cy={flower.y - 6 * flower.scale}
+                          r={4 * flower.scale}
+                          fill="rgba(255,255,255,0.38)"
+                        />
+                      </motion.g>
+                    </motion.g>
+                  </g>
+                ))}
+
+                <g>
+                  <ellipse cx="130" cy="220" rx="6" ry="12" fill="#ffe7f2" opacity="0.42" transform="rotate(-24 130 220)" />
+                  <ellipse cx="320" cy="248" rx="5" ry="10" fill="#ffdce7" opacity="0.38" transform="rotate(22 320 248)" />
+                  <ellipse cx="150" cy="178" rx="4" ry="9" fill="#f9d4e4" opacity="0.34" transform="rotate(-18 150 178)" />
+                  <ellipse cx="296" cy="190" rx="5" ry="11" fill="#f3c2da" opacity="0.32" transform="rotate(16 296 190)" />
+                  <circle cx="215" cy="110" r="3.2" fill="#fff3f8" opacity="0.66" />
+                  <circle cx="255" cy="108" r="2.6" fill="#ffe6f0" opacity="0.58" />
+                </g>
+
+                <motion.g
+                  initial={{ opacity: 0, y: 24 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.8, delay: 0.55, ease: "easeOut" }}
+                  filter="url(#wrapLift)"
+                >
+                  <path d="M104 564 L210 358 L316 564 Q210 614 104 564 Z" fill="url(#paperFront)" />
+                  <path d="M104 564 L210 358 L210 520 L104 564 Z" fill="rgba(241,206,217,0.28)" />
+                  <path d="M316 564 L210 358 L210 520 L316 564 Z" fill="rgba(214,169,188,0.18)" />
+                  <path d="M104 564 L210 358 L316 564 Q210 614 104 564 Z" fill="url(#paperGrain)" opacity="0.16" />
+                </motion.g>
+
+                <motion.g
+                  initial={{ opacity: 0, scale: 0.6 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.6, delay: 1.1, ease: "backOut" }}
+                  style={{ transformOrigin: "210px 520px" }}
+                >
+                  <path
+                    d="M154 520 C176 500 196 500 210 520 C193 542 171 540 154 520 Z"
+                    fill="url(#ribbonGradient)"
+                  />
+                  <path
+                    d="M266 520 C244 500 224 500 210 520 C227 542 249 540 266 520 Z"
+                    fill="url(#ribbonGradient)"
+                  />
+                  {/* Ribbon tails */}
+                  <path
+                    d="M154 520 C148 542 136 558 132 584 C130 602 138 620 146 626"
+                    stroke="url(#ribbonGradient)"
+                    strokeWidth="12"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M266 520 C272 542 284 568 288 594 C290 612 282 626 272 628"
+                    stroke="url(#ribbonGradient)"
+                    strokeWidth="12"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                  <rect x="194" y="508" width="32" height="34" rx="12" fill="#e25589" />
+                  <path d="M202 540 L184 578" stroke="#c84677" strokeWidth="7" strokeLinecap="round" />
+                  <path d="M218 540 L236 578" stroke="#c84677" strokeWidth="7" strokeLinecap="round" />
+                  <motion.circle
+                    cx="210"
+                    cy="525"
+                    r="13"
+                    fill="none"
+                    stroke="rgba(255,229,238,0.75)"
+                    strokeWidth="2.2"
+                    animate={{ scale: [0.9, 1.45, 0.9], opacity: [0.75, 0.08, 0.75] }}
+                    transition={{ duration: 2.3, repeat: Infinity, ease: "easeOut" }}
+                    style={{ transformOrigin: "210px 525px" }}
+                  />
+                  <motion.circle
+                    cx="210"
+                    cy="525"
+                    r="20"
+                    fill="none"
+                    stroke="rgba(255,164,197,0.35)"
+                    strokeWidth="1.4"
+                    animate={{ scale: [0.82, 1.22, 0.82], opacity: [0.3, 0.08, 0.3] }}
+                    transition={{ duration: 2.3, repeat: Infinity, ease: "easeOut", delay: 0.2 }}
+                    style={{ transformOrigin: "210px 525px" }}
+                  />
+                  <circle cx="210" cy="525" r="8" fill="#ff8dbe" />
+                  <motion.circle
+                    cx="206"
+                    cy="521"
+                    r="2.7"
+                    fill="rgba(255,255,255,0.95)"
+                    animate={{ opacity: [0.55, 1, 0.55], scale: [0.85, 1.18, 0.85] }}
+                    transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+                    style={{ transformOrigin: "206px 521px" }}
+                  />
+                </motion.g>
+
+                {/* Additional flower bunch details - small buds and scattered petals */}
+                <motion.g
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.8, delay: 1.4, ease: "easeOut" }}
+                >
+                  {/* Small buds around the bouquet */}
+                  <circle cx="120" cy="480" r="8" fill="#ff9cc9" />
+                  <circle cx="300" cy="490" r="6" fill="#ffb4d4" />
+                  <circle cx="140" cy="520" r="7" fill="#f55ea4" />
+                  <circle cx="280" cy="530" r="5" fill="#eb5d97" />
+                  <circle cx="100" cy="540" r="6" fill="#ff7d96" />
+                  <circle cx="320" cy="550" r="8" fill="#f66aa6" />
+
+                  {/* Scattered petals */}
+                  <ellipse cx="110" cy="460" rx="4" ry="8" transform="rotate(45 110 460)" fill="#fff5fb" opacity="0.8" />
+                  <ellipse cx="310" cy="470" rx="3" ry="6" transform="rotate(-30 310 470)" fill="#ffe1f0" opacity="0.7" />
+                  <ellipse cx="130" cy="500" rx="5" ry="3" transform="rotate(60 130 500)" fill="#fff8fc" opacity="0.9" />
+                  <ellipse cx="290" cy="510" rx="4" ry="7" transform="rotate(-45 290 510)" fill="#ffe0ef" opacity="0.8" />
+                  <ellipse cx="95" cy="560" rx="3" ry="5" transform="rotate(30 95 560)" fill="#fff7f5" opacity="0.7" />
+                  <ellipse cx="325" cy="570" rx="4" ry="6" transform="rotate(-60 325 570)" fill="#ffe3e8" opacity="0.8" />
+
+                  {/* Additional greenery sprigs */}
+                  <path d="M85 520 Q95 500 105 520 Q95 540 85 520" stroke="#6c9b63" strokeWidth="2" fill="none" strokeLinecap="round" />
+                  <path d="M315 530 Q325 510 335 530 Q325 550 315 530" stroke="#87b07d" strokeWidth="2" fill="none" strokeLinecap="round" />
+                </motion.g>
+                </svg>
+                  </motion.button>
+
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {stage === "letter" && (
+          <motion.div
+            key="letter"
+            initial={{ opacity: 0, y: 40, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -40, scale: 0.96 }}
+            transition={{ duration: 0.9, ease: "easeOut" }}
+            className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-4xl items-center"
+          >
+            <div className="w-full space-y-6 rounded-[2.5rem] border border-[#f1dfe5] bg-[linear-gradient(145deg,rgba(255,255,255,0.97),rgba(255,248,245,0.99),rgba(250,238,243,0.98),rgba(248,235,250,0.95))] p-5 text-center shadow-[0_34px_100px_rgba(107,63,83,0.18)] backdrop-blur-xl sm:space-y-8 sm:p-10">
+              <motion.h1
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7 }}
+                className="font-display text-[2rem] font-semibold tracking-[0.04em] text-[#321325] sm:text-5xl"
+              >
+                {letterTitle}
+              </motion.h1>
+
+              <div className="relative overflow-hidden rounded-[2.2rem] border border-[#ead7cb] bg-[linear-gradient(160deg,_rgba(255,252,247,0.995),_rgba(255,247,240,0.99),_rgba(250,241,233,0.99),_rgba(248,238,231,0.985))] px-5 py-6 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.8),inset_0_0_42px_rgba(198,154,131,0.08)] sm:px-9 sm:py-9">
+                <div className="pointer-events-none absolute inset-0 opacity-[0.14] mix-blend-multiply [background-image:radial-gradient(rgba(118,86,63,0.16)_0.7px,transparent_0.85px)] [background-size:11px_11px]" />
+                <div className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:linear-gradient(180deg,rgba(160,116,87,0.2)_0px,transparent_1px)] [background-size:100%_2.2rem]" />
+                <div className="absolute -top-5 left-5 h-16 w-16 rounded-full bg-[#f7c6d5]/80 blur-2xl" />
+                <div className="absolute -bottom-5 right-5 h-20 w-20 rounded-full bg-[#dfcaef]/80 blur-2xl" />
+                {isLetterTyping && (
+                  <div className="relative mb-4 flex justify-end border-b border-[#e8d4c9]/85 pb-4">
+                    <button
+                      type="button"
+                      onClick={() => setSkipLetterTyping(true)}
+                      className="rounded-full border border-[#d9bcb0] bg-white/70 px-4 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[#76453f] transition hover:bg-white"
+                    >
+                      Skip Typing
+                    </button>
+                  </div>
+                )}
+                <div className="letter-scroll relative max-h-[68vh] overflow-y-auto pr-1 sm:pr-3">
+                  <div className="mx-auto max-w-[39rem] space-y-6 text-[1.02rem] font-medium leading-8 tracking-[0.005em] text-[#2a1714] sm:text-[1.12rem] sm:leading-[2.2rem]">
+                    {displayedLetterParagraphs.map((paragraph, index) => (
+                      <p key={`letter-paragraph-${index}`}>
+                        {index === 0 ? (
+                          <>
+                            <span className="font-display float-left mr-3 mt-1 text-[4.2rem] leading-[0.78] text-[#9a5d59] sm:text-[4.9rem]">
+                              {paragraph.slice(0, 1)}
+                            </span>
+                            {paragraph.slice(1)}
+                          </>
+                        ) : (
+                          paragraph
+                        )}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+                {isLetterTyping && (
+                  <div className="mt-6 text-right text-sm uppercase tracking-[0.3em] text-[#5b243d] opacity-95">
+                    <span className="inline-block animate-pulse">Typing...</span>
+                  </div>
+                )}
+              </div>
+
+              <div className={`${softNavigationShellClass} flex flex-wrap items-center justify-center gap-3`}>
+                <Button
+                  onClick={() => setStage("flowers")}
+                  className={`${secondaryButtonClass} ${largeActionButtonClass} flex-1 sm:flex-none`}
+                >
+                  Back to Flowers
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    setAlbumView("photos");
+                    setStage("album");
+                  }}
+                  className={`${primaryButtonClass} ${largeActionButtonClass} flex-1 sm:flex-none`}
+                >
+                  Our Memories
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {stage === "album" && renderAlbumStage()}
+      </AnimatePresence>
+
+      {cropSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#181118] shadow-[0_30px_80px_rgba(0,0,0,0.5)]">
+            <div className="border-b border-white/10 px-5 py-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.25em] text-white/60">Fit your photo</p>
+                  <h2 className="mt-1 text-lg font-semibold text-white">Adjust how you want it</h2>
+                </div>
+                <Button
+                  onClick={handleCancelCrop}
+                  className={`${ghostButtonClass} min-h-0 px-4 py-2 text-[0.62rem] tracking-[0.22em] text-[#f9eaf0] shadow-[0_14px_32px_rgba(0,0,0,0.16)] hover:text-white`}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+
+            <div className="p-4">
+              <div className="mx-auto mb-4 w-full max-w-3xl overflow-hidden rounded-[1.5rem] bg-[#0f0711]">
+                <div className="relative flex h-[26rem] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_35%),linear-gradient(180deg,_#0e0911_0%,_#050306_100%)] sm:h-[28rem]">
+                  <img
+                    src={cropSession.url}
+                    alt={cropSession.label}
+                    className="absolute inset-0 h-full w-full object-contain p-4 opacity-30"
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_22%,_rgba(0,0,0,0.42)_100%)]" />
+                  <div className="relative aspect-square w-full max-w-[min(24rem,calc(100%-1.5rem))] overflow-hidden rounded-[1.5rem] border border-white/35 bg-black/45 shadow-[0_20px_60px_rgba(0,0,0,0.42)]">
+                    <div className="pointer-events-none absolute inset-0 z-20 border border-white/20" />
+                    <div className="pointer-events-none absolute inset-0 z-20 bg-[linear-gradient(90deg,_transparent_calc(33.333%-0.5px),_rgba(255,255,255,0.12)_calc(33.333%-0.5px),_rgba(255,255,255,0.12)_calc(33.333%+0.5px),_transparent_calc(33.333%+0.5px),_transparent_calc(66.666%-0.5px),_rgba(255,255,255,0.12)_calc(66.666%-0.5px),_rgba(255,255,255,0.12)_calc(66.666%+0.5px),_transparent_calc(66.666%+0.5px)),linear-gradient(180deg,_transparent_calc(33.333%-0.5px),_rgba(255,255,255,0.12)_calc(33.333%-0.5px),_rgba(255,255,255,0.12)_calc(33.333%+0.5px),_transparent_calc(33.333%+0.5px),_transparent_calc(66.666%-0.5px),_rgba(255,255,255,0.12)_calc(66.666%-0.5px),_rgba(255,255,255,0.12)_calc(66.666%+0.5px),_transparent_calc(66.666%+0.5px))]" />
+                    {cropPreviewGeometry ? (
+                      <img
+                        src={cropSession.url}
+                        alt={cropSession.label}
+                        className="absolute max-w-none select-none"
+                        onLoad={(event) => {
+                          const { naturalWidth, naturalHeight } = event.currentTarget;
+                          setCropImageSize({ width: naturalWidth, height: naturalHeight });
+                        }}
+                        style={{
+                          width: `${cropPreviewGeometry.previewWidthPercent}%`,
+                          height: `${cropPreviewGeometry.previewHeightPercent}%`,
+                          left: `${50 + cropPreviewGeometry.previewShiftXPercent}%`,
+                          top: `${50 + cropPreviewGeometry.previewShiftYPercent}%`,
+                          transform: "translate(-50%, -50%)",
+                        }}
+                      />
+                    ) : (
+                      <img
+                        src={cropSession.url}
+                        alt={cropSession.label}
+                        className="h-full w-full object-contain"
+                        onLoad={(event) => {
+                          const { naturalWidth, naturalHeight } = event.currentTarget;
+                          setCropImageSize({ width: naturalWidth, height: naturalHeight });
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="px-1 text-center text-xs uppercase tracking-[0.22em] text-white/62">
+                  Full photo stays visible behind the square so you can crop it cleanly
+                </p>
+                <div className="rounded-[1.25rem] bg-white/5 p-3 text-white/90">
+                  <div className="flex items-center justify-between gap-2 text-xs font-medium text-white/70">
+                    <span>Zoom</span>
+                    <span>{Math.round(cropZoom * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="2"
+                    step="0.02"
+                    value={cropZoom}
+                    onChange={(event) => setCropZoom(Number(event.target.value))}
+                    className="mt-2 h-1.5 w-full cursor-pointer accent-[#e97fbc]"
+                  />
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="rounded-[1.25rem] bg-white/5 p-3 text-xs text-white/70">
+                    Horizontal
+                    <input
+                      type="range"
+                      min="-100"
+                      max="100"
+                      step="2"
+                      value={cropOffsetX}
+                      onChange={(event) => setCropOffsetX(Number(event.target.value))}
+                      className="mt-2 h-1.5 w-full cursor-pointer accent-[#e97fbc]"
+                    />
+                  </label>
+                  <label className="rounded-[1.25rem] bg-white/5 p-3 text-xs text-white/70">
+                    Vertical
+                    <input
+                      type="range"
+                      min="-100"
+                      max="100"
+                      step="2"
+                      value={cropOffsetY}
+                      onChange={(event) => setCropOffsetY(Number(event.target.value))}
+                      className="mt-2 h-1.5 w-full cursor-pointer accent-[#e97fbc]"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex flex-col gap-3 rounded-[1.45rem] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))] p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="px-1 text-center text-[0.66rem] uppercase tracking-[0.22em] text-white/52 sm:max-w-[18rem] sm:text-left">
+                    Crop it the way you like, then save it into your scrapbook.
+                  </p>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    <Button
+                      onClick={() => {
+                        setCropZoom(1);
+                        setCropOffsetX(0);
+                        setCropOffsetY(0);
+                      }}
+                      className={`${secondaryButtonClass} ${cropActionButtonClass} sm:min-w-[8.5rem]`}
+                    >
+                      Reset
+                    </Button>
+                    <Button
+                      onClick={handleConfirmCrop}
+                      className={`${primaryButtonClass} ${cropActionButtonClass} sm:min-w-[12rem]`}
+                    >
+                      <CropGlyph className="h-4 w-4" />
+                      Crop & Save
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
